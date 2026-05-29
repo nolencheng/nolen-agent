@@ -7,15 +7,25 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "publish": "wrangler deploy",
-    "test": "node --test"
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
-  "keywords": ["pdf", "summarizer", "ai"],
+  "keywords": [
+    "pdf",
+    "summarizer",
+    "ai"
+  ],
   "author": "nolen.cheng@gmail.com",
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.10",
+    "@vitest/ui": "^4.1.7",
+    "vitest": "^4.1.7",
     "wrangler": "^4.94.0"
   }
 }
