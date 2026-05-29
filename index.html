@@ -1,40 +1,1633 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-Hans">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的网站</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SystemVerilog Assertion 自動生成器</title>
+  <!-- Wavedrom.js for timing diagram rendering -->
+  <script src="https://wavedrom.com/wavedrom.js"></script>
+  <link rel="stylesheet" href="https://wavedrom.com/wavedrom.css">
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 95vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 5px;
+    }
+
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      padding: 15px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      font-weight: 600;
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .validation-status {
+      font-size: 12px;
+      font-weight: normal;
+      color: #999;
+    }
+
+    .validation-status.valid {
+      color: #4caf50;
+    }
+
+    .validation-status.invalid {
+      color: #f44336;
+    }
+
+    .validation-status.validating {
+      color: #2196f3;
+    }
+
+    #json-editor.invalid {
+      border-color: #f44336;
+      background: #ffebee;
+    }
+
+    #json-editor.valid {
+      border-color: #4caf50;
+    }
+
+    .signal-info {
+      font-size: 11px;
+      color: #666;
+      margin-top: 5px;
+      padding: 5px;
+      background: #f0f8ff;
+      border-radius: 3px;
+      max-height: 40px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 編輯器面板 */
+    #json-editor {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 10px;
+      border: 2px solid #ccc;
+      border-radius: 4px;
+      flex: 1;
+      resize: none;
+      background: white;
+      transition: border-color 0.3s;
+    }
+
+    #json-editor.drag-over {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+
+    .editor-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    button {
+      padding: 8px 16px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #764ba2;
+    }
+
+    button.secondary {
+      background: #999;
+    }
+
+    button.secondary:hover {
+      background: #777;
+    }
+
+    /* 波形視覺化面板 */
+    #waveform-container {
+      flex: 1;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+
+    #waveform-diagram {
+      width: 100%;
+      height: auto;
+    }
+
+    .waveform-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #999;
+      text-align: center;
+      font-size: 13px;
+      flex: 1;
+    }
+
+    .waveform-error {
+      color: #f44336;
+      font-size: 12px;
+      padding: 10px;
+      background: #ffebee;
+      border-radius: 4px;
+    }
+
+    /* 配置面板 */
+    .config-section {
+      margin-bottom: 15px;
+    }
+
+    .config-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 5px;
+      display: block;
+    }
+
+    .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    .config-select {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* 預覽面板 */
+    #sva-preview {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+      flex: 1;
+      overflow: auto;
+      white-space: pre;
+      word-wrap: break-word;
+      color: #333;
+      line-height: 1.4;
+    }
+
+    #sva-preview code {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+    }
+
+    /* Highlight.js 自訂 SystemVerilog 樣式 */
+    .hljs {
+      background: white;
+      color: #333;
+    }
+
+    .hljs-keyword {
+      color: #0066cc;
+      font-weight: bold;
+    }
+
+    .hljs-built_in {
+      color: #0066cc;
+    }
+
+    .hljs-string {
+      color: #008000;
+    }
+
+    .hljs-number {
+      color: #ff6600;
+    }
+
+    .hljs-literal {
+      color: #ff6600;
+    }
+
+    .hljs-attr {
+      color: #0066cc;
+    }
+
+    .hljs-comment {
+      color: #999;
+      font-style: italic;
+    }
+
+    .hljs-title {
+      color: #000;
+    }
+
+    .preview-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* 底部預覽和控制 */
+    .bottom-section {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
+      padding: 15px;
+      border-top: 1px solid #ddd;
+      overflow: hidden;
+    }
+
+    .sva-output-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sva-output-panel .panel-header {
+      margin-bottom: 8px;
+    }
+
+    .messages {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 150px;
+    }
+
+    .message {
+      margin-bottom: 5px;
+      padding: 5px;
+      border-left: 3px solid #ccc;
+      padding-left: 8px;
+    }
+
+    .message.success {
+      border-left-color: #4caf50;
+      color: #4caf50;
+    }
+
+    .message.error {
+      border-left-color: #f44336;
+      color: #f44336;
+    }
+
+    .message.warning {
+      border-left-color: #ff9800;
+      color: #ff9800;
+    }
+
+    .message.info {
+      border-left-color: #2196f3;
+      color: #2196f3;
+    }
+
+    /* 響應式設計 */
+    @media (max-width: 1024px) {
+      .main-layout {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .bottom-section {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .container {
+        height: auto;
+      }
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      color: #667eea;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .spinner {
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* 約束檢查面板 */
+    .constraints-section {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 15px;
+      border-top: 1px solid #ddd;
+      overflow: hidden;
+      background: #fafafa;
+    }
+
+    .constraints-panel {
+      display: flex;
+      flex-direction: column;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .constraints-header {
+      padding: 15px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+      font-weight: 600;
+      color: #667eea;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .constraints-tabs {
+      display: flex;
+      gap: 0;
+      padding: 10px;
+      background: white;
+      border-bottom: 1px solid #ddd;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      background: #f0f0f0;
+      color: #666;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.3s;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      background: #e8e8e8;
+    }
+
+    .tab-btn.active {
+      background: white;
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .constraints-content {
+      flex: 1;
+      overflow: auto;
+      padding: 15px;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .constraints-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+    }
+
+    .constraints-table thead {
+      background: #f0f0f0;
+      border-bottom: 2px solid #ddd;
+    }
+
+    .constraints-table th {
+      padding: 8px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      border-right: 1px solid #ddd;
+    }
+
+    .constraints-table th:last-child {
+      border-right: none;
+    }
+
+    .constraints-table td {
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+      border-right: 1px solid #eee;
+    }
+
+    .constraints-table td:last-child {
+      border-right: none;
+    }
+
+    .constraints-table tbody tr:hover {
+      background: #f9f9f9;
+    }
+
+    .violation {
+      color: #f44336;
+      font-weight: bold;
+    }
+
+    .pass {
+      color: #4caf50;
+    }
+
+    .consistency-low {
+      color: #ff9800;
+    }
+
+    .consistency-high {
+      color: #4caf50;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .summary-item {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+      border-left: 4px solid #667eea;
+    }
+
+    .summary-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .summary-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #999;
+      padding: 20px;
+      font-size: 12px;
+    }
+
+    #constraints-panel {
+      display: none;
+      height: 250px;
+      margin-top: 10px;
+    }
+
+    #constraints-panel.active {
+      display: flex;
+    }
+
+    /* 預設面板 */
+    .preset-section {
+      background: #f0f4ff;
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 12px;
+      border-left: 4px solid #667eea;
+    }
+
+    .preset-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .preset-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-dropdown {
+      flex: 1;
+      min-width: 150px;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+      background: white;
+    }
+
+    .preset-btn {
+      padding: 6px 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.3s;
+    }
+
+    .preset-btn:hover {
+      background: #764ba2;
+    }
+
+    .preset-btn.secondary {
+      background: #999;
+    }
+
+    .preset-btn.secondary:hover {
+      background: #777;
+    }
+
+    .preset-info {
+      font-size: 10px;
+      color: #666;
+      margin-top: 6px;
+      font-style: italic;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>欢迎来到我的网站</h1>
-            <p class="subtitle">由 Claude Code 和 Cloudflare 驱动</p>
-        </header>
-
-        <main>
-            <section class="card">
-                <h2>🚀 快速部署</h2>
-                <p>使用 Cloudflare Workers 在全球边缘部署你的应用</p>
-            </section>
-
-            <section class="card">
-                <h2>⚡ 高性能</h2>
-                <p>享受接近零延迟的加载速度</p>
-            </section>
-
-            <section class="card">
-                <h2>🔒 安全可靠</h2>
-                <p>企业级的安全和稳定性</p>
-            </section>
-        </main>
-
-        <footer>
-            <p>&copy; 2026 我的网站。所有权利保留。</p>
-        </footer>
+  <div class="container">
+    <div class="header">
+      <h1>⚡ SystemVerilog Assertion 自動生成器</h1>
+      <p>將 Wavedrom 時序圖轉換為 SVA 代碼</p>
     </div>
 
-    <script src="script.js"></script>
+    <div class="main-layout">
+      <!-- 左面板：JSON 編輯器 -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>📝 Wavedrom JSON</span>
+          <span class="validation-status" id="validation-status"></span>
+        </div>
+        <input type="file" id="file-input" accept=".json">
+        <textarea id="json-editor" placeholder="貼上或上傳 Wavedrom JSON..."></textarea>
+        <div class="signal-info" id="signal-info" style="display: none;"></div>
+        <div class="editor-controls">
+          <button onclick="loadExample()">📌 示例</button>
+          <button class="secondary" onclick="uploadFile()">📁 上傳</button>
+          <button class="secondary" onclick="clearEditor()">清除</button>
+          <button class="secondary" onclick="validateJSON()">驗證</button>
+        </div>
+      </div>
+
+      <!-- 中面板：波形視覺化 -->
+      <div class="panel">
+        <div class="panel-header">🌊 時序圖視覺化</div>
+        <div id="waveform-container">
+          <svg id="waveform-diagram" style="display:none;"></svg>
+          <div class="waveform-placeholder" id="waveform-placeholder">
+            上傳或貼上 Wavedrom JSON 以顯示時序圖
+          </div>
+        </div>
+      </div>
+
+      <!-- 右面板：配置 -->
+      <div class="panel">
+        <div class="panel-header">⚙️ 生成配置</div>
+
+        <div class="config-section">
+          <label class="config-label">Assertion 類型</label>
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-logic" checked>
+              <label for="check-logic">邏輯關係</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-timing" checked>
+              <label for="check-timing">時序約束</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-sequence" checked>
+              <label for="check-sequence">序列模式</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-implication" checked>
+              <label for="check-implication">因果關係</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">時間單位</label>
+          <select class="config-select" id="time-unit">
+            <option value="ps">皮秒 (ps)</option>
+            <option value="ns" selected>納秒 (ns)</option>
+            <option value="us">微秒 (us)</option>
+          </select>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">生成模式</label>
+          <select class="config-select" id="assertion-mode">
+            <option value="strict" selected>嚴格 (Strict)</option>
+            <option value="relaxed">寬鬆 (Relaxed)</option>
+          </select>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">輸出選項</label>
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="include-assume">
+              <label for="include-assume">包含 assume</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="include-cover">
+              <label for="include-cover">包含 cover</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 預設組態 -->
+        <div class="preset-section">
+          <label class="preset-label">⭐ 預設組態</label>
+          <div class="preset-controls">
+            <select class="preset-dropdown" id="preset-selector">
+              <option value="">載入預設...</option>
+              <option value="strict">嚴格 (Strict)</option>
+              <option value="coverage">涵蓋 (Coverage)</option>
+              <option value="minimal">最小 (Minimal)</option>
+            </select>
+            <button class="preset-btn" onclick="loadSelectedPreset()">載入</button>
+          </div>
+          <div class="preset-controls">
+            <input type="text" id="preset-name" class="preset-dropdown" placeholder="輸入預設名稱...">
+            <button class="preset-btn secondary" onclick="saveCurrentPreset()">💾 存存</button>
+          </div>
+          <div class="preset-info" id="preset-info">目前: 預設值</div>
+        </div>
+
+        <button onclick="generateSVA()" style="width: 100%; margin-top: 10px;">
+          🚀 生成 SVA 代碼
+        </button>
+      </div>
+    </div>
+
+    <!-- 底部：預覽和消息 -->
+    <div class="bottom-section">
+      <div class="sva-output-panel">
+        <div class="panel-header">📄 SVA 代碼預覽</div>
+        <pre id="sva-preview"><code id="sva-code-content" class="language-systemverilog">// 點擊「生成 SVA 代碼」按鈕查看結果</code></pre>
+        <div class="preview-controls">
+          <button onclick="copySVA()" class="secondary">📋 複製</button>
+          <button onclick="downloadSVA()" class="secondary">⬇️ 下載</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel-header">📢 消息日誌</div>
+        <div class="messages" id="message-log"></div>
+        <div class="loading" id="loading">
+          <span class="spinner"></span>生成中...
+        </div>
+      </div>
+    </div>
+
+    <!-- 約束檢查面板 -->
+    <div id="constraints-panel" class="constraints-section">
+      <div class="constraints-panel">
+        <div class="constraints-header">
+          📊 時序約束分析
+          <span id="violation-indicator"></span>
+        </div>
+        <div class="constraints-tabs">
+          <button class="tab-btn active" onclick="switchConstraintTab('summary')" data-tab="summary">摘要</button>
+          <button class="tab-btn" onclick="switchConstraintTab('setup')" data-tab="setup">Setup Time</button>
+          <button class="tab-btn" onclick="switchConstraintTab('hold')" data-tab="hold">Hold Time</button>
+          <button class="tab-btn" onclick="switchConstraintTab('sequences')" data-tab="sequences">序列</button>
+          <button class="tab-btn" onclick="switchConstraintTab('implications')" data-tab="implications">因果關係</button>
+        </div>
+        <div class="constraints-content">
+          <!-- 摘要選項卡 -->
+          <div id="tab-summary" class="tab-content active">
+            <div class="summary-grid" id="summary-grid">
+              <div class="empty-state">載入中...</div>
+            </div>
+          </div>
+
+          <!-- Setup Time 選項卡 -->
+          <div id="tab-setup" class="tab-content">
+            <table class="constraints-table" id="setup-table">
+              <thead>
+                <tr>
+                  <th>數據信號</th>
+                  <th>時鐘信號</th>
+                  <th>Setup Time (ns)</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="setup-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="setup-empty">無 Setup 約束</div>
+          </div>
+
+          <!-- Hold Time 選項卡 -->
+          <div id="tab-hold" class="tab-content">
+            <table class="constraints-table" id="hold-table">
+              <thead>
+                <tr>
+                  <th>數據信號</th>
+                  <th>時鐘信號</th>
+                  <th>Hold Time (ns)</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="hold-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="hold-empty">無 Hold 約束</div>
+          </div>
+
+          <!-- 序列選項卡 -->
+          <div id="tab-sequences" class="tab-content">
+            <table class="constraints-table" id="sequences-table">
+              <thead>
+                <tr>
+                  <th>信號序列</th>
+                  <th>出現次數</th>
+                  <th>時間範圍 (ns)</th>
+                </tr>
+              </thead>
+              <tbody id="sequences-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="sequences-empty">無信號序列</div>
+          </div>
+
+          <!-- 因果關係選項卡 -->
+          <div id="tab-implications" class="tab-content">
+            <table class="constraints-table" id="implications-table">
+              <thead>
+                <tr>
+                  <th>前驅 → 後繼</th>
+                  <th>延遲 (ns)</th>
+                  <th>一致性</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="implications-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="implications-empty">無因果關係</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 防抖工具函數
+    function debounce(func, delay) {
+      let timeoutId;
+      return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func(...args), delay);
+      };
+    }
+
+    // 實時驗證
+    let lastValidJSON = null;
+    const performRealtimeValidation = debounce(async function() {
+      const editor = document.getElementById('json-editor');
+      const text = editor.value.trim();
+      const statusEl = document.getElementById('validation-status');
+      const signalInfoEl = document.getElementById('signal-info');
+
+      if (!text) {
+        editor.classList.remove('valid', 'invalid');
+        statusEl.textContent = '';
+        signalInfoEl.style.display = 'none';
+        return;
+      }
+
+      try {
+        // 嘗試解析 JSON
+        const json = JSON.parse(text);
+        lastValidJSON = json;
+
+        // 更新編輯器樣式
+        editor.classList.remove('invalid');
+        editor.classList.add('valid');
+        statusEl.textContent = '✓ 格式正確';
+        statusEl.className = 'validation-status valid';
+
+        // 呼叫 API 驗證
+        statusEl.textContent = '⏳ 驗證中...';
+        statusEl.className = 'validation-status validating';
+
+        const response = await fetch('/api/validate-wavedrom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wavedrom: json })
+        });
+
+        const data = await response.json();
+
+        if (data.valid) {
+          // 構建信號信息字符串
+          const clockSignals = data.signals.filter(s => s.is_clock).map(s => s.name);
+          const dataSignals = data.signals.filter(s => !s.is_clock).map(s => s.name);
+
+          let infoText = `🔍 ${data.signals.length} 信號`;
+          if (clockSignals.length > 0) {
+            infoText += ` | 時鐘: ${clockSignals.join(', ')}`;
+          }
+          if (dataSignals.length > 0) {
+            infoText += ` | 數據: ${dataSignals.join(', ')}`;
+          }
+
+          signalInfoEl.textContent = infoText;
+          signalInfoEl.style.display = 'block';
+
+          editor.classList.remove('invalid');
+          editor.classList.add('valid');
+          statusEl.textContent = `✓ ${data.signals.length} 信號檢測到`;
+          statusEl.className = 'validation-status valid';
+        } else {
+          editor.classList.remove('valid');
+          editor.classList.add('invalid');
+          statusEl.textContent = '✗ 驗證失敗';
+          statusEl.className = 'validation-status invalid';
+          signalInfoEl.style.display = 'none';
+        }
+      } catch (e) {
+        // JSON 解析錯誤
+        editor.classList.remove('valid');
+        editor.classList.add('invalid');
+        statusEl.textContent = '✗ JSON 格式錯誤';
+        statusEl.className = 'validation-status invalid';
+        signalInfoEl.style.display = 'none';
+      }
+    }, 1000); // 1秒防抖
+
+    // 為編輯器添加實時驗證監聽
+    document.getElementById('json-editor').addEventListener('input', performRealtimeValidation);
+
+    // 註冊 SystemVerilog 語言定義給 Highlight.js
+    if (typeof hljs !== 'undefined') {
+      hljs.registerLanguage('systemverilog', function(hljs) {
+        return {
+          case_insensitive: false,
+          keywords: {
+            keyword: 'module endmodule input output parameter always @posedge @negedge if else case default always_comb always_ff initial ' +
+                     'property endproperty assert assume cover sequence assert_property assume_property cover_property ' +
+                     'disable iff ##',
+            type: 'logic bit int reg wire string real bit void',
+            literal: '0 1'
+          },
+          contains: [
+            hljs.C_LINE_COMMENT_MODE,
+            hljs.C_BLOCK_COMMENT_MODE,
+            hljs.QUOTE_STRING_MODE,
+            {
+              className: 'number',
+              begin: '\\b([0-9]\'[0-9a-fA-FxXzZ_]+)',
+              relevance: 0
+            },
+            {
+              className: 'number',
+              begin: '\\b\\d+\\b',
+              relevance: 0
+            },
+            {
+              className: 'symbol',
+              begin: '[|&~^]|<<|>>|\\*\\*|\\+=|-=|\\*=|/=|%=|&=|\\^=|<<=|>>=|===|!==|==|!=|<=|>=|->|\\|->',
+              relevance: 0
+            }
+          ]
+        };
+      });
+    }
+
+    // 示例 Wavedrom 數據
+    const EXAMPLE_WAVEDROM = {
+      signal: [
+        { name: "clk", wave: "p.p.p.p.p." },
+        { name: "reset_n", wave: "0.1......." },
+        { name: "data", wave: "x.3.x.4.x", data: ["A", "B"] },
+        { name: "valid", wave: "0.1.0.1.0" }
+      ],
+      config: {
+        hscale: 1,
+        vscale: 1
+      }
+    };
+
+    // 日誌管理
+    function addMessage(msg, type = 'info') {
+      const log = document.getElementById('message-log');
+      const msgEl = document.createElement('div');
+      msgEl.className = `message ${type}`;
+      msgEl.textContent = new Date().toLocaleTimeString() + ' - ' + msg;
+      log.appendChild(msgEl);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function clearMessages() {
+      document.getElementById('message-log').innerHTML = '';
+    }
+
+    // 編輯器控制
+    function loadExample() {
+      document.getElementById('json-editor').value = JSON.stringify(EXAMPLE_WAVEDROM, null, 2);
+      addMessage('已載入示例 Wavedrom JSON', 'info');
+      // 觸發實時驗證
+      performRealtimeValidation();
+    }
+
+    function clearEditor() {
+      document.getElementById('json-editor').value = '';
+      document.getElementById('json-editor').classList.remove('valid', 'invalid');
+      document.getElementById('validation-status').textContent = '';
+      document.getElementById('signal-info').style.display = 'none';
+      document.getElementById('waveform-diagram').innerHTML = '';
+      document.getElementById('waveform-diagram').style.display = 'none';
+      document.getElementById('waveform-placeholder').style.display = 'flex';
+      addMessage('編輯器已清除', 'info');
+    }
+
+    // 文件上傳支持
+    function uploadFile() {
+      document.getElementById('file-input').click();
+    }
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const json = JSON.parse(event.target.result);
+          document.getElementById('json-editor').value = JSON.stringify(json, null, 2);
+          addMessage(`已載入文件: ${file.name}`, 'success');
+          renderWaveform(json);
+          // 觸發實時驗證
+          performRealtimeValidation();
+        } catch (err) {
+          addMessage(`文件解析失敗: ${err.message}`, 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // 拖放支持
+    const editor = document.getElementById('json-editor');
+    editor.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      editor.classList.add('drag-over');
+    });
+
+    editor.addEventListener('dragleave', () => {
+      editor.classList.remove('drag-over');
+    });
+
+    editor.addEventListener('drop', (e) => {
+      e.preventDefault();
+      editor.classList.remove('drag-over');
+
+      const files = e.dataTransfer.files;
+      if (!files.length) return;
+
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const json = JSON.parse(event.target.result);
+          document.getElementById('json-editor').value = JSON.stringify(json, null, 2);
+          addMessage(`已載入文件 (拖放): ${file.name}`, 'success');
+          renderWaveform(json);
+          // 觸發實時驗證
+          performRealtimeValidation();
+        } catch (err) {
+          addMessage(`文件解析失敗: ${err.message}`, 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // 波形渲染函數
+    function renderWaveform(wavedromJSON) {
+      try {
+        if (!wavedromJSON || !wavedromJSON.signal) {
+          addMessage('Wavedrom JSON 格式不正確', 'warning');
+          return;
+        }
+
+        // 使用 Wavedrom.js 的 renderSVG 函數
+        if (typeof Wavedrom === 'undefined' || !Wavedrom.render) {
+          addMessage('Wavedrom 庫未載入', 'warning');
+          document.getElementById('waveform-placeholder').style.display = 'flex';
+          return;
+        }
+
+        // 清空之前的內容
+        const diagram = document.getElementById('waveform-diagram');
+        diagram.innerHTML = '';
+
+        // 使用 Wavedrom 內置的異步渲染
+        Wavedrom.render(wavedromJSON, diagram, undefined).then(() => {
+          document.getElementById('waveform-placeholder').style.display = 'none';
+          diagram.style.display = 'block';
+          addMessage('時序圖已渲染', 'success');
+        }).catch((err) => {
+          document.getElementById('waveform-placeholder').style.display = 'flex';
+          diagram.style.display = 'none';
+          addMessage(`波形渲染失敗: ${err.message}`, 'error');
+        });
+      } catch (err) {
+        document.getElementById('waveform-placeholder').style.display = 'flex';
+        document.getElementById('waveform-diagram').style.display = 'none';
+        addMessage(`波形渲染異常: ${err.message}`, 'error');
+      }
+    }
+
+    function validateJSON() {
+      const text = document.getElementById('json-editor').value;
+      if (!text.trim()) {
+        addMessage('編輯器為空', 'warning');
+        return;
+      }
+
+      try {
+        const json = JSON.parse(text);
+        addMessage('JSON 格式正確 ✓', 'success');
+
+        // 渲染波形
+        renderWaveform(json);
+
+        // 嘗試從 API 驗證
+        fetch('/api/validate-wavedrom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wavedrom: json })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.valid) {
+            addMessage(`檢測到 ${data.signals.length} 個信號`, 'success');
+          } else {
+            addMessage(data.errors?.join('; ') || '驗證失敗', 'error');
+          }
+        })
+        .catch(err => addMessage('API 調用失敗: ' + err.message, 'error'));
+      } catch (e) {
+        addMessage('JSON 格式錯誤: ' + e.message, 'error');
+      }
+    }
+
+    // SVA 生成
+    function generateSVA() {
+      clearMessages();
+      const text = document.getElementById('json-editor').value;
+
+      if (!text.trim()) {
+        addMessage('請先貼上 Wavedrom JSON', 'error');
+        return;
+      }
+
+      try {
+        const wavedrom = JSON.parse(text);
+
+        // 先渲染波形
+        renderWaveform(wavedrom);
+
+        const config = {
+          assertion_types: {
+            logic_relations: document.getElementById('check-logic').checked,
+            timing_constraints: document.getElementById('check-timing').checked,
+            sequence_patterns: document.getElementById('check-sequence').checked,
+            implications: document.getElementById('check-implication').checked
+          },
+          assertion_mode: document.getElementById('assertion-mode').value,
+          time_unit: document.getElementById('time-unit').value,
+          include_assume: document.getElementById('include-assume').checked,
+          include_cover: document.getElementById('include-cover').checked
+        };
+
+        document.getElementById('loading').classList.add('active');
+
+        fetch('/api/generate-sva', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wavedrom, config })
+        })
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('loading').classList.remove('active');
+          if (data.status === 'success') {
+            const codeElement = document.getElementById('sva-code-content');
+            codeElement.textContent = data.sva_code;
+            codeElement.className = 'language-systemverilog';
+
+            // 應用語法高亮
+            if (typeof hljs !== 'undefined') {
+              hljs.highlightElement(codeElement);
+            }
+
+            // 填充約束檢查面板
+            if (data.timing_analysis && data.analysis) {
+              populateConstraintsPanel(data.timing_analysis, data.analysis);
+            }
+
+            addMessage('SVA 代碼已生成 ✓', 'success');
+            if (data.analysis) {
+              addMessage(`檢測到: ${data.analysis.detected_relations} 邏輯, ${data.analysis.detected_constraints} 時序, ${data.analysis.detected_sequences} 序列`, 'info');
+              if (data.analysis.setup_violations > 0 || data.analysis.hold_violations > 0) {
+                addMessage(`⚠️ 警告: 檢測到 ${data.analysis.setup_violations} 個 setup 違規和 ${data.analysis.hold_violations} 個 hold 違規`, 'warning');
+              }
+            }
+          } else {
+            addMessage(data.message || '生成失敗', 'error');
+          }
+        })
+        .catch(err => {
+          document.getElementById('loading').classList.remove('active');
+          addMessage('API 錯誤: ' + err.message, 'error');
+        });
+      } catch (e) {
+        addMessage('JSON 解析失敗: ' + e.message, 'error');
+      }
+    }
+
+    // 預覽控制
+    function copySVA() {
+      const text = document.getElementById('sva-code-content').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        addMessage('已複製到剪貼板', 'success');
+      }).catch(() => {
+        addMessage('複製失敗', 'error');
+      });
+    }
+
+    function downloadSVA() {
+      const text = document.getElementById('sva-code-content').textContent;
+      if (!text || text.includes('點擊')) {
+        addMessage('沒有 SVA 代碼可下載', 'warning');
+        return;
+      }
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'assertions.sv';
+      a.click();
+      URL.revokeObjectURL(url);
+      addMessage('SVA 文件已下載', 'success');
+    }
+
+    // 約束面板 - 選項卡切換
+    function switchConstraintTab(tabName) {
+      // 隱藏所有選項卡內容
+      const contents = document.querySelectorAll('.tab-content');
+      contents.forEach(c => c.classList.remove('active'));
+
+      // 移除所有按鈕的 active 類
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(b => b.classList.remove('active'));
+
+      // 顯示選中的選項卡
+      const tabContent = document.getElementById('tab-' + tabName);
+      if (tabContent) {
+        tabContent.classList.add('active');
+      }
+
+      // 標記選中的按鈕
+      const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+      }
+    }
+
+    // 約束面板 - 填充數據
+    function populateConstraintsPanel(timingAnalysis, analysis) {
+      if (!timingAnalysis) return;
+
+      // 顯示面板
+      document.getElementById('constraints-panel').classList.add('active');
+
+      // 摘要選項卡
+      const summaryGrid = document.getElementById('summary-grid');
+      summaryGrid.innerHTML = `
+        <div class="summary-item">
+          <div class="summary-label">總信號數</div>
+          <div class="summary-value">${analysis.signals || 0}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">時鐘信號</div>
+          <div class="summary-value">${analysis.clock_signals?.length || 0}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">時序約束</div>
+          <div class="summary-value">${analysis.detected_constraints || 0}</div>
+        </div>
+        <div class="summary-item" style="border-left-color: ${analysis.setup_violations + analysis.hold_violations > 0 ? '#f44336' : '#4caf50'}">
+          <div class="summary-label">時序違規</div>
+          <div class="summary-value${analysis.setup_violations + analysis.hold_violations > 0 ? ' violation' : ' pass'}">${analysis.setup_violations + analysis.hold_violations}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">信號序列</div>
+          <div class="summary-value">${timingAnalysis.signal_sequences?.length || 0}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">因果關係</div>
+          <div class="summary-value">${timingAnalysis.implications?.length || 0}</div>
+        </div>
+      `;
+
+      // 違規指示器
+      const violationCount = (analysis.setup_violations || 0) + (analysis.hold_violations || 0);
+      const violationIndicator = document.getElementById('violation-indicator');
+      if (violationCount > 0) {
+        violationIndicator.innerHTML = `<span class="violation">⚠️ ${violationCount} 個違規</span>`;
+      } else {
+        violationIndicator.innerHTML = `<span class="pass">✓ 無違規</span>`;
+      }
+
+      // Setup Time 約束
+      const setupTbody = document.getElementById('setup-tbody');
+      const setupEmpty = document.getElementById('setup-empty');
+      setupTbody.innerHTML = '';
+
+      if (timingAnalysis.setup_constraints && timingAnalysis.setup_constraints.length > 0) {
+        setupEmpty.style.display = 'none';
+        document.getElementById('setup-table').style.display = 'table';
+        timingAnalysis.setup_constraints.forEach(c => {
+          const row = setupTbody.insertRow();
+          row.innerHTML = `
+            <td>${c.dataSignal}</td>
+            <td>${c.clockSignal}</td>
+            <td>${c.setupTime}</td>
+            <td class="${c.violation ? 'violation' : 'pass'}">${c.violation ? '✗ 違規' : '✓ 通過'}</td>
+          `;
+        });
+      } else {
+        setupEmpty.style.display = 'block';
+        document.getElementById('setup-table').style.display = 'none';
+      }
+
+      // Hold Time 約束
+      const holdTbody = document.getElementById('hold-tbody');
+      const holdEmpty = document.getElementById('hold-empty');
+      holdTbody.innerHTML = '';
+
+      if (timingAnalysis.hold_constraints && timingAnalysis.hold_constraints.length > 0) {
+        holdEmpty.style.display = 'none';
+        document.getElementById('hold-table').style.display = 'table';
+        timingAnalysis.hold_constraints.forEach(c => {
+          const row = holdTbody.insertRow();
+          row.innerHTML = `
+            <td>${c.dataSignal}</td>
+            <td>${c.clockSignal}</td>
+            <td>${c.holdTime}</td>
+            <td class="${c.violation ? 'violation' : 'pass'}">${c.violation ? '✗ 違規' : '✓ 通過'}</td>
+          `;
+        });
+      } else {
+        holdEmpty.style.display = 'block';
+        document.getElementById('hold-table').style.display = 'none';
+      }
+
+      // 信號序列
+      const sequencesTbody = document.getElementById('sequences-tbody');
+      const sequencesEmpty = document.getElementById('sequences-empty');
+      sequencesTbody.innerHTML = '';
+
+      if (timingAnalysis.signal_sequences && timingAnalysis.signal_sequences.length > 0) {
+        sequencesEmpty.style.display = 'none';
+        document.getElementById('sequences-table').style.display = 'table';
+        timingAnalysis.signal_sequences.forEach(s => {
+          const row = sequencesTbody.insertRow();
+          const duration = s.timings?.[0]?.duration ? ` (${s.timings[0].duration} ns)` : '';
+          row.innerHTML = `
+            <td>${s.signals.join(' → ')}</td>
+            <td>${s.occurrences}</td>
+            <td>${duration}</td>
+          `;
+        });
+      } else {
+        sequencesEmpty.style.display = 'block';
+        document.getElementById('sequences-table').style.display = 'none';
+      }
+
+      // 因果關係
+      const implicationsTbody = document.getElementById('implications-tbody');
+      const implicationsEmpty = document.getElementById('implications-empty');
+      implicationsTbody.innerHTML = '';
+
+      if (timingAnalysis.implications && timingAnalysis.implications.length > 0) {
+        implicationsEmpty.style.display = 'none';
+        document.getElementById('implications-table').style.display = 'table';
+        timingAnalysis.implications.forEach(i => {
+          const row = implicationsTbody.insertRow();
+          const consistencyNum = parseFloat(i.consistency) / 100;
+          const consistencyClass = consistencyNum >= 0.5 ? 'consistency-high' : 'consistency-low';
+          const statusClass = consistencyNum >= 0.5 ? 'pass' : 'warning';
+          row.innerHTML = `
+            <td>${i.antecedent} → ${i.consequent}</td>
+            <td>${i.delay}</td>
+            <td class="${consistencyClass}">${i.consistency}</td>
+            <td class="${statusClass}">${consistencyNum >= 0.5 ? '✓ 確定' : '⚠️ 可能'}</td>
+          `;
+        });
+      } else {
+        implicationsEmpty.style.display = 'block';
+        document.getElementById('implications-table').style.display = 'none';
+      }
+    }
+
+    // 預設組態定義
+    const PRESETS = {
+      strict: {
+        name: '嚴格 (Strict)',
+        config: {
+          'check-logic': true,
+          'check-timing': true,
+          'check-sequence': true,
+          'check-implication': true,
+          'time-unit': 'ns',
+          'assertion-mode': 'strict',
+          'include-assume': false,
+          'include-cover': true
+        }
+      },
+      coverage: {
+        name: '涵蓋 (Coverage)',
+        config: {
+          'check-logic': true,
+          'check-timing': true,
+          'check-sequence': true,
+          'check-implication': true,
+          'time-unit': 'ns',
+          'assertion-mode': 'strict',
+          'include-assume': true,
+          'include-cover': true
+        }
+      },
+      minimal: {
+        name: '最小 (Minimal)',
+        config: {
+          'check-logic': false,
+          'check-timing': true,
+          'check-sequence': false,
+          'check-implication': false,
+          'time-unit': 'ns',
+          'assertion-mode': 'relaxed',
+          'include-assume': false,
+          'include-cover': false
+        }
+      }
+    };
+
+    // 取得當前設定
+    function getCurrentConfig() {
+      return {
+        'check-logic': document.getElementById('check-logic').checked,
+        'check-timing': document.getElementById('check-timing').checked,
+        'check-sequence': document.getElementById('check-sequence').checked,
+        'check-implication': document.getElementById('check-implication').checked,
+        'time-unit': document.getElementById('time-unit').value,
+        'assertion-mode': document.getElementById('assertion-mode').value,
+        'include-assume': document.getElementById('include-assume').checked,
+        'include-cover': document.getElementById('include-cover').checked
+      };
+    }
+
+    // 套用設定到 UI
+    function applyConfig(config) {
+      if (config['check-logic'] !== undefined) document.getElementById('check-logic').checked = config['check-logic'];
+      if (config['check-timing'] !== undefined) document.getElementById('check-timing').checked = config['check-timing'];
+      if (config['check-sequence'] !== undefined) document.getElementById('check-sequence').checked = config['check-sequence'];
+      if (config['check-implication'] !== undefined) document.getElementById('check-implication').checked = config['check-implication'];
+      if (config['time-unit']) document.getElementById('time-unit').value = config['time-unit'];
+      if (config['assertion-mode']) document.getElementById('assertion-mode').value = config['assertion-mode'];
+      if (config['include-assume'] !== undefined) document.getElementById('include-assume').checked = config['include-assume'];
+      if (config['include-cover'] !== undefined) document.getElementById('include-cover').checked = config['include-cover'];
+    }
+
+    // 載入選定的預設
+    function loadSelectedPreset() {
+      const selector = document.getElementById('preset-selector');
+      const presetName = selector.value;
+
+      if (!presetName) {
+        addMessage('請選擇一個預設', 'warning');
+        return;
+      }
+
+      // 檢查自定義預設
+      let config;
+      if (PRESETS[presetName]) {
+        config = PRESETS[presetName].config;
+        document.getElementById('preset-info').textContent = `目前: ${PRESETS[presetName].name}`;
+      } else {
+        // 從 localStorage 載入自定義預設
+        const saved = localStorage.getItem('sva-preset-' + presetName);
+        if (saved) {
+          config = JSON.parse(saved);
+          document.getElementById('preset-info').textContent = `目前: ${presetName} (自定義)`;
+        } else {
+          addMessage('預設不存在', 'error');
+          return;
+        }
+      }
+
+      applyConfig(config);
+      addMessage(`已載入預設: ${presetName}`, 'success');
+
+      // 自動保存此預設作為上次使用的設定
+      localStorage.setItem('sva-last-preset', presetName);
+    }
+
+    // 保存當前設定為預設
+    function saveCurrentPreset() {
+      const input = document.getElementById('preset-name');
+      const presetName = input.value.trim();
+
+      if (!presetName) {
+        addMessage('請輸入預設名稱', 'warning');
+        return;
+      }
+
+      if (PRESETS[presetName]) {
+        addMessage('此名稱與內置預設重複，請使用其他名稱', 'error');
+        return;
+      }
+
+      const config = getCurrentConfig();
+      localStorage.setItem('sva-preset-' + presetName, JSON.stringify(config));
+
+      // 添加到下拉菜單
+      const selector = document.getElementById('preset-selector');
+      const option = document.createElement('option');
+      option.value = presetName;
+      option.textContent = `${presetName} (自定義)`;
+      selector.appendChild(option);
+
+      addMessage(`預設已保存: ${presetName}`, 'success');
+      input.value = '';
+
+      // 更新預設資訊
+      document.getElementById('preset-info').textContent = `目前: ${presetName} (自定義)`;
+      localStorage.setItem('sva-last-preset', presetName);
+    }
+
+    // 初始化預設列表（添加已保存的自定義預設到下拉菜單）
+    function initializePresetList() {
+      const selector = document.getElementById('preset-selector');
+
+      // 從 localStorage 恢復已保存的自定義預設
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('sva-preset-')) {
+          const presetName = key.replace('sva-preset-', '');
+          // 檢查此預設是否已在列表中（跳過內置預設）
+          if (!PRESETS[presetName] && ![...selector.options].some(o => o.value === presetName)) {
+            const option = document.createElement('option');
+            option.value = presetName;
+            option.textContent = `${presetName} (自定義)`;
+            selector.appendChild(option);
+          }
+        }
+      }
+    }
+
+    // 自動載入上次使用的預設
+    function autoLoadLastPreset() {
+      const lastPreset = localStorage.getItem('sva-last-preset');
+      if (lastPreset) {
+        const selector = document.getElementById('preset-selector');
+        selector.value = lastPreset;
+        loadSelectedPreset();
+      }
+    }
+
+    // 初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      addMessage('SVA 生成器已就緒', 'success');
+      initializePresetList();
+      autoLoadLastPreset();
+    });
+  </script>
 </body>
 </html>

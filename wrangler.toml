@@ -7,13 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 bucket = "."
 
 [env.production]
-vars = {
-  ENVIRONMENT = "production",
-  ANALYSIS_TIMEOUT = "30000",
-  RATE_LIMIT_REQUESTS = "10",
-  RATE_LIMIT_WINDOW = "60000",
-  LOG_LEVEL = "info"
-}
+vars = { ENVIRONMENT = "production", ANALYSIS_TIMEOUT = "30000", RATE_LIMIT_REQUESTS = "10", RATE_LIMIT_WINDOW = "60000", LOG_LEVEL = "info" }
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
