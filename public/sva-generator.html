@@ -77,6 +77,48 @@
       color: #667eea;
       margin-bottom: 10px;
       font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .validation-status {
+      font-size: 12px;
+      font-weight: normal;
+      color: #999;
+    }
+
+    .validation-status.valid {
+      color: #4caf50;
+    }
+
+    .validation-status.invalid {
+      color: #f44336;
+    }
+
+    .validation-status.validating {
+      color: #2196f3;
+    }
+
+    #json-editor.invalid {
+      border-color: #f44336;
+      background: #ffebee;
+    }
+
+    #json-editor.valid {
+      border-color: #4caf50;
+    }
+
+    .signal-info {
+      font-size: 11px;
+      color: #666;
+      margin-top: 5px;
+      padding: 5px;
+      background: #f0f8ff;
+      border-radius: 3px;
+      max-height: 40px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* 編輯器面板 */
@@ -567,9 +609,13 @@
     <div class="main-layout">
       <!-- 左面板：JSON 編輯器 -->
       <div class="panel">
-        <div class="panel-header">📝 Wavedrom JSON</div>
+        <div class="panel-header">
+          <span>📝 Wavedrom JSON</span>
+          <span class="validation-status" id="validation-status"></span>
+        </div>
         <input type="file" id="file-input" accept=".json">
         <textarea id="json-editor" placeholder="貼上或上傳 Wavedrom JSON..."></textarea>
+        <div class="signal-info" id="signal-info" style="display: none;"></div>
         <div class="editor-controls">
           <button onclick="loadExample()">📌 示例</button>
           <button class="secondary" onclick="uploadFile()">📁 上傳</button>
@@ -766,6 +812,93 @@
   </div>
 
   <script>
+    // 防抖工具函數
+    function debounce(func, delay) {
+      let timeoutId;
+      return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func(...args), delay);
+      };
+    }
+
+    // 實時驗證
+    let lastValidJSON = null;
+    const performRealtimeValidation = debounce(async function() {
+      const editor = document.getElementById('json-editor');
+      const text = editor.value.trim();
+      const statusEl = document.getElementById('validation-status');
+      const signalInfoEl = document.getElementById('signal-info');
+
+      if (!text) {
+        editor.classList.remove('valid', 'invalid');
+        statusEl.textContent = '';
+        signalInfoEl.style.display = 'none';
+        return;
+      }
+
+      try {
+        // 嘗試解析 JSON
+        const json = JSON.parse(text);
+        lastValidJSON = json;
+
+        // 更新編輯器樣式
+        editor.classList.remove('invalid');
+        editor.classList.add('valid');
+        statusEl.textContent = '✓ 格式正確';
+        statusEl.className = 'validation-status valid';
+
+        // 呼叫 API 驗證
+        statusEl.textContent = '⏳ 驗證中...';
+        statusEl.className = 'validation-status validating';
+
+        const response = await fetch('/api/validate-wavedrom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wavedrom: json })
+        });
+
+        const data = await response.json();
+
+        if (data.valid) {
+          // 構建信號信息字符串
+          const clockSignals = data.signals.filter(s => s.is_clock).map(s => s.name);
+          const dataSignals = data.signals.filter(s => !s.is_clock).map(s => s.name);
+
+          let infoText = `🔍 ${data.signals.length} 信號`;
+          if (clockSignals.length > 0) {
+            infoText += ` | 時鐘: ${clockSignals.join(', ')}`;
+          }
+          if (dataSignals.length > 0) {
+            infoText += ` | 數據: ${dataSignals.join(', ')}`;
+          }
+
+          signalInfoEl.textContent = infoText;
+          signalInfoEl.style.display = 'block';
+
+          editor.classList.remove('invalid');
+          editor.classList.add('valid');
+          statusEl.textContent = `✓ ${data.signals.length} 信號檢測到`;
+          statusEl.className = 'validation-status valid';
+        } else {
+          editor.classList.remove('valid');
+          editor.classList.add('invalid');
+          statusEl.textContent = '✗ 驗證失敗';
+          statusEl.className = 'validation-status invalid';
+          signalInfoEl.style.display = 'none';
+        }
+      } catch (e) {
+        // JSON 解析錯誤
+        editor.classList.remove('valid');
+        editor.classList.add('invalid');
+        statusEl.textContent = '✗ JSON 格式錯誤';
+        statusEl.className = 'validation-status invalid';
+        signalInfoEl.style.display = 'none';
+      }
+    }, 1000); // 1秒防抖
+
+    // 為編輯器添加實時驗證監聽
+    document.getElementById('json-editor').addEventListener('input', performRealtimeValidation);
+
     // 註冊 SystemVerilog 語言定義給 Highlight.js
     if (typeof hljs !== 'undefined') {
       hljs.registerLanguage('systemverilog', function(hljs) {
@@ -834,10 +967,15 @@
     function loadExample() {
       document.getElementById('json-editor').value = JSON.stringify(EXAMPLE_WAVEDROM, null, 2);
       addMessage('已載入示例 Wavedrom JSON', 'info');
+      // 觸發實時驗證
+      performRealtimeValidation();
     }
 
     function clearEditor() {
       document.getElementById('json-editor').value = '';
+      document.getElementById('json-editor').classList.remove('valid', 'invalid');
+      document.getElementById('validation-status').textContent = '';
+      document.getElementById('signal-info').style.display = 'none';
       document.getElementById('waveform-diagram').innerHTML = '';
       document.getElementById('waveform-diagram').style.display = 'none';
       document.getElementById('waveform-placeholder').style.display = 'flex';
@@ -860,6 +998,8 @@
           document.getElementById('json-editor').value = JSON.stringify(json, null, 2);
           addMessage(`已載入文件: ${file.name}`, 'success');
           renderWaveform(json);
+          // 觸發實時驗證
+          performRealtimeValidation();
         } catch (err) {
           addMessage(`文件解析失敗: ${err.message}`, 'error');
         }
@@ -893,6 +1033,8 @@
           document.getElementById('json-editor').value = JSON.stringify(json, null, 2);
           addMessage(`已載入文件 (拖放): ${file.name}`, 'success');
           renderWaveform(json);
+          // 觸發實時驗證
+          performRealtimeValidation();
         } catch (err) {
           addMessage(`文件解析失敗: ${err.message}`, 'error');
         }
