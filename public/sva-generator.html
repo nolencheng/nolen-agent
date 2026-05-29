@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SystemVerilog Assertion 自動生成器</title>
+  <!-- Wavedrom.js for timing diagram rendering -->
+  <script src="https://wavedrom.com/wavedrom.js"></script>
+  <link rel="stylesheet" href="https://wavedrom.com/wavedrom.css">
   <style>
     * {
       margin: 0;
@@ -78,11 +81,17 @@
       font-family: 'Courier New', monospace;
       font-size: 12px;
       padding: 10px;
-      border: 1px solid #ccc;
+      border: 2px solid #ccc;
       border-radius: 4px;
       flex: 1;
       resize: none;
       background: white;
+      transition: border-color 0.3s;
+    }
+
+    #json-editor.drag-over {
+      border-color: #667eea;
+      background: #f0f4ff;
     }
 
     .editor-controls {
@@ -90,6 +99,10 @@
       gap: 8px;
       margin-top: 10px;
       flex-wrap: wrap;
+    }
+
+    #file-input {
+      display: none;
     }
 
     button {
@@ -123,6 +136,15 @@
       border-radius: 4px;
       padding: 10px;
       overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+
+    #waveform-diagram {
+      width: 100%;
+      height: auto;
     }
 
     .waveform-placeholder {
@@ -133,6 +155,15 @@
       color: #999;
       text-align: center;
       font-size: 13px;
+      flex: 1;
+    }
+
+    .waveform-error {
+      color: #f44336;
+      font-size: 12px;
+      padding: 10px;
+      background: #ffebee;
+      border-radius: 4px;
     }
 
     /* 配置面板 */
@@ -313,9 +344,11 @@
       <!-- 左面板：JSON 編輯器 -->
       <div class="panel">
         <div class="panel-header">📝 Wavedrom JSON</div>
+        <input type="file" id="file-input" accept=".json">
         <textarea id="json-editor" placeholder="貼上或上傳 Wavedrom JSON..."></textarea>
         <div class="editor-controls">
           <button onclick="loadExample()">📌 示例</button>
+          <button class="secondary" onclick="uploadFile()">📁 上傳</button>
           <button class="secondary" onclick="clearEditor()">清除</button>
           <button class="secondary" onclick="validateJSON()">驗證</button>
         </div>
@@ -325,7 +358,8 @@
       <div class="panel">
         <div class="panel-header">🌊 時序圖視覺化</div>
         <div id="waveform-container">
-          <div class="waveform-placeholder">
+          <svg id="waveform-diagram" style="display:none;"></svg>
+          <div class="waveform-placeholder" id="waveform-placeholder">
             上傳或貼上 Wavedrom JSON 以顯示時序圖
           </div>
         </div>
@@ -452,7 +486,102 @@
 
     function clearEditor() {
       document.getElementById('json-editor').value = '';
+      document.getElementById('waveform-diagram').innerHTML = '';
+      document.getElementById('waveform-diagram').style.display = 'none';
+      document.getElementById('waveform-placeholder').style.display = 'flex';
       addMessage('編輯器已清除', 'info');
+    }
+
+    // 文件上傳支持
+    function uploadFile() {
+      document.getElementById('file-input').click();
+    }
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const json = JSON.parse(event.target.result);
+          document.getElementById('json-editor').value = JSON.stringify(json, null, 2);
+          addMessage(`已載入文件: ${file.name}`, 'success');
+          renderWaveform(json);
+        } catch (err) {
+          addMessage(`文件解析失敗: ${err.message}`, 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // 拖放支持
+    const editor = document.getElementById('json-editor');
+    editor.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      editor.classList.add('drag-over');
+    });
+
+    editor.addEventListener('dragleave', () => {
+      editor.classList.remove('drag-over');
+    });
+
+    editor.addEventListener('drop', (e) => {
+      e.preventDefault();
+      editor.classList.remove('drag-over');
+
+      const files = e.dataTransfer.files;
+      if (!files.length) return;
+
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const json = JSON.parse(event.target.result);
+          document.getElementById('json-editor').value = JSON.stringify(json, null, 2);
+          addMessage(`已載入文件 (拖放): ${file.name}`, 'success');
+          renderWaveform(json);
+        } catch (err) {
+          addMessage(`文件解析失敗: ${err.message}`, 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // 波形渲染函數
+    function renderWaveform(wavedromJSON) {
+      try {
+        if (!wavedromJSON || !wavedromJSON.signal) {
+          addMessage('Wavedrom JSON 格式不正確', 'warning');
+          return;
+        }
+
+        // 使用 Wavedrom.js 的 renderSVG 函數
+        if (typeof Wavedrom === 'undefined' || !Wavedrom.render) {
+          addMessage('Wavedrom 庫未載入', 'warning');
+          document.getElementById('waveform-placeholder').style.display = 'flex';
+          return;
+        }
+
+        // 清空之前的內容
+        const diagram = document.getElementById('waveform-diagram');
+        diagram.innerHTML = '';
+
+        // 使用 Wavedrom 內置的異步渲染
+        Wavedrom.render(wavedromJSON, diagram, undefined).then(() => {
+          document.getElementById('waveform-placeholder').style.display = 'none';
+          diagram.style.display = 'block';
+          addMessage('時序圖已渲染', 'success');
+        }).catch((err) => {
+          document.getElementById('waveform-placeholder').style.display = 'flex';
+          diagram.style.display = 'none';
+          addMessage(`波形渲染失敗: ${err.message}`, 'error');
+        });
+      } catch (err) {
+        document.getElementById('waveform-placeholder').style.display = 'flex';
+        document.getElementById('waveform-diagram').style.display = 'none';
+        addMessage(`波形渲染異常: ${err.message}`, 'error');
+      }
     }
 
     function validateJSON() {
@@ -465,6 +594,10 @@
       try {
         const json = JSON.parse(text);
         addMessage('JSON 格式正確 ✓', 'success');
+
+        // 渲染波形
+        renderWaveform(json);
+
         // 嘗試從 API 驗證
         fetch('/api/validate-wavedrom', {
           method: 'POST',
@@ -497,6 +630,10 @@
 
       try {
         const wavedrom = JSON.parse(text);
+
+        // 先渲染波形
+        renderWaveform(wavedrom);
+
         const config = {
           assertion_types: {
             logic_relations: document.getElementById('check-logic').checked,
@@ -525,6 +662,9 @@
             addMessage('SVA 代碼已生成 ✓', 'success');
             if (data.analysis) {
               addMessage(`檢測到: ${data.analysis.detected_relations} 邏輯, ${data.analysis.detected_constraints} 時序, ${data.analysis.detected_sequences} 序列`, 'info');
+              if (data.analysis.setup_violations > 0 || data.analysis.hold_violations > 0) {
+                addMessage(`⚠️ 警告: 檢測到 ${data.analysis.setup_violations} 個 setup 違規和 ${data.analysis.hold_violations} 個 hold 違規`, 'warning');
+              }
             }
           } else {
             addMessage(data.message || '生成失敗', 'error');
