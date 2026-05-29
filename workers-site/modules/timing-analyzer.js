@@ -347,6 +347,214 @@ export function detectClockToQDelay(events, clockSignals) {
  * @param {object} config - 配置選項
  * @returns {object} 完整的分析結果
  */
+/**
+ * 檢測禁止轉移（Forbidden Transitions）
+ * 某些信號對不應同時發生邊沿
+ * @param {object[]} events - 時序事件
+ * @param {object[]} forbiddenPairs - 禁止轉移對 [{signal1, signal2}, ...]
+ * @returns {object[]} 違規檢測結果
+ */
+export function detectForbiddenTransitions(events, forbiddenPairs = []) {
+  const violations = [];
+
+  if (!forbiddenPairs || forbiddenPairs.length === 0) {
+    return violations;
+  }
+
+  // 按時刻分組事件以快速查找同時邊沿
+  const timeToEvents = {};
+  events.forEach(event => {
+    if (!timeToEvents[event.time]) {
+      timeToEvents[event.time] = [];
+    }
+    timeToEvents[event.time].push(event);
+  });
+
+  // 檢查每個禁止對
+  forbiddenPairs.forEach(pair => {
+    // 尋找兩個信號同時發生的邊沿
+    Object.entries(timeToEvents).forEach(([time, eventsAtTime]) => {
+      const sig1Events = eventsAtTime.filter(e => e.signal === pair.signal1);
+      const sig2Events = eventsAtTime.filter(e => e.signal === pair.signal2);
+
+      if (sig1Events.length > 0 && sig2Events.length > 0) {
+        violations.push({
+          type: 'forbidden_transition',
+          signals: [pair.signal1, pair.signal2],
+          time: parseInt(time),
+          sig1_edge: sig1Events[0].eventType,
+          sig2_edge: sig2Events[0].eventType,
+          severity: 'critical',
+          description: `${pair.signal1} (${sig1Events[0].eventType}) 和 ${pair.signal2} (${sig2Events[0].eventType}) 在時刻 ${time} 同時轉移`
+        });
+      }
+
+      // 也檢查接近的時刻（時間窗口內）
+      const timeNum = parseInt(time);
+      for (let offset = 1; offset <= 2; offset++) {
+        const nearbyTime = timeNum + offset;
+        if (timeToEvents[nearbyTime]) {
+          const nearbyEventsTime = timeToEvents[nearbyTime];
+          const nearbySig1 = nearbyEventsTime.filter(e => e.signal === pair.signal1);
+          const nearbySig2 = nearbyEventsTime.filter(e => e.signal === pair.signal2);
+
+          if (sig1Events.length > 0 && nearbySig2.length > 0) {
+            violations.push({
+              type: 'forbidden_transition_near',
+              signals: [pair.signal1, pair.signal2],
+              time1: timeNum,
+              time2: nearbyTime,
+              distance: offset,
+              severity: 'warning',
+              description: `${pair.signal1} 和 ${pair.signal2} 在相近時刻轉移（距離 ${offset} 個時間單位）`
+            });
+          }
+        }
+      }
+    });
+  });
+
+  return violations;
+}
+
+/**
+ * 檢測關鍵路徑（Critical Path）
+ * 找出最長的組合邏輯路徑
+ * @param {object[]} events - 時序事件
+ * @param {string[]} clockSignals - 時鐘信號名稱
+ * @returns {object[]} 關鍵路徑分析結果
+ */
+export function detectCriticalPaths(events, clockSignals = []) {
+  const paths = [];
+
+  if (!clockSignals || clockSignals.length === 0) {
+    return paths;
+  }
+
+  // 找所有時鐘邊沿
+  const clockEdges = events.filter(e =>
+    clockSignals.includes(e.signal) &&
+    (e.eventType === 'rising_edge' || e.eventType === 'falling_edge')
+  ).sort((a, b) => a.time - b.time);
+
+  if (clockEdges.length < 2) {
+    return paths;
+  }
+
+  // 計算相鄰時鐘邊沿之間的路徑
+  for (let i = 0; i < clockEdges.length - 1; i++) {
+    const clockPeriodStart = clockEdges[i];
+    const clockPeriodEnd = clockEdges[i + 1];
+    const period = clockPeriodEnd.time - clockPeriodStart.time;
+
+    // 找該週期內所有非時鐘信號的邊沿
+    const pathEvents = events.filter(e =>
+      e.time > clockPeriodStart.time &&
+      e.time <= clockPeriodEnd.time &&
+      !clockSignals.includes(e.signal) &&
+      (e.eventType === 'rising_edge' || e.eventType === 'falling_edge')
+    ).sort((a, b) => a.time - b.time);
+
+    if (pathEvents.length > 0) {
+      const lastEvent = pathEvents[pathEvents.length - 1];
+      const delay = clockPeriodEnd.time - lastEvent.time;
+      const slack = delay; // 從最後邊沿到時鐘邊沿的時間
+
+      paths.push({
+        period_index: i,
+        clock_period: period,
+        path_events: pathEvents.map(e => ({
+          signal: e.signal,
+          time: e.time,
+          type: e.eventType
+        })),
+        path_length: pathEvents.length,
+        max_delay: period - slack,
+        slack: slack,
+        criticality: slack < period * 0.1 ? 'critical' : slack < period * 0.3 ? 'warning' : 'safe',
+        description: slack < 0
+          ? `關鍵：時序違規，延遲超過時鐘週期 ${Math.abs(slack)} 個單位`
+          : `時序安全，裕度 ${slack} 個單位`
+      });
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * 檢測時鐘偏差（Clock Skew）
+ * 分析多個時鐘信號之間的時序差異
+ * @param {object[]} events - 時序事件
+ * @param {string[]} clockSignals - 時鐘信號名稱
+ * @returns {object} 時鐘偏差分析結果
+ */
+export function detectClockSkew(events, clockSignals = []) {
+  const skewAnalysis = {
+    clock_signals: clockSignals,
+    edge_analysis: [],
+    max_skew: 0,
+    average_skew: 0,
+    skew_violations: []
+  };
+
+  if (!clockSignals || clockSignals.length < 2) {
+    return skewAnalysis;
+  }
+
+  // 為每個時鐘信號收集上升沿事件
+  const clockEventsBySignal = {};
+  for (const clk of clockSignals) {
+    clockEventsBySignal[clk] = events.filter(e =>
+      e.signal === clk &&
+      e.eventType === 'rising_edge'
+    ).sort((a, b) => a.time - b.time);
+  }
+
+  // 比較相應邊沿的時序
+  const maxEdges = Math.min(...clockSignals.map(c => clockEventsBySignal[c].length));
+
+  for (let edgeIdx = 0; edgeIdx < maxEdges; edgeIdx++) {
+    const edgeTimes = {};
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+
+    clockSignals.forEach(clk => {
+      const edgeTime = clockEventsBySignal[clk][edgeIdx].time;
+      edgeTimes[clk] = edgeTime;
+      minTime = Math.min(minTime, edgeTime);
+      maxTime = Math.max(maxTime, edgeTime);
+    });
+
+    const edgeSkew = maxTime - minTime;
+
+    skewAnalysis.edge_analysis.push({
+      edge_index: edgeIdx,
+      times: edgeTimes,
+      skew: edgeSkew,
+      severity: edgeSkew > 5 ? 'critical' : edgeSkew > 2 ? 'warning' : 'safe'
+    });
+
+    skewAnalysis.max_skew = Math.max(skewAnalysis.max_skew, edgeSkew);
+
+    if (edgeSkew > 5) {
+      skewAnalysis.skew_violations.push({
+        edge_index: edgeIdx,
+        max_skew: edgeSkew,
+        description: `第 ${edgeIdx} 個邊沿的時鐘偏差 ${edgeSkew} 個單位，超過閾值 5`
+      });
+    }
+  }
+
+  // 計算平均偏差
+  if (skewAnalysis.edge_analysis.length > 0) {
+    const totalSkew = skewAnalysis.edge_analysis.reduce((sum, e) => sum + e.skew, 0);
+    skewAnalysis.average_skew = totalSkew / skewAnalysis.edge_analysis.length;
+  }
+
+  return skewAnalysis;
+}
+
 export function performFullTimingAnalysis(analysis, config = {}) {
   const setupMargin = config.setupMargin || 2;
   const holdMargin = config.holdMargin || 2;
@@ -367,9 +575,26 @@ export function performFullTimingAnalysis(analysis, config = {}) {
   const implications = detectImplications(analysis.events, maxDelay);
   const ctqDelays = detectClockToQDelay(analysis.events, analysis.clockSignals);
 
+  // Phase 5F: Advanced analysis
+  const forbiddenTransitions = detectForbiddenTransitions(
+    analysis.events,
+    config.forbiddenPairs || []
+  );
+  const criticalPaths = detectCriticalPaths(
+    analysis.events,
+    analysis.clockSignals
+  );
+  const clockSkew = detectClockSkew(
+    analysis.events,
+    analysis.clockSignals
+  );
+
   // 統計違規
   const setupViolations = setupConstraints.filter(c => c.violation).length;
   const holdViolations = holdConstraints.filter(c => c.violation).length;
+  const forbiddenViolations = forbiddenTransitions.filter(v => v.type === 'forbidden_transition').length;
+  const criticalPathViolations = criticalPaths.filter(p => p.slack < 0).length;
+  const clockSkewViolations = clockSkew.skew_violations.length;
 
   return {
     logic_relations: logicRelations,
@@ -378,6 +603,9 @@ export function performFullTimingAnalysis(analysis, config = {}) {
     signal_sequences: sequences,
     implications: implications,
     clock_to_q_delays: ctqDelays,
+    forbidden_transitions: forbiddenTransitions,
+    critical_paths: criticalPaths,
+    clock_skew: clockSkew,
     statistics: {
       total_logic_relations: logicRelations.length,
       total_setup_constraints: setupConstraints.length,
@@ -386,9 +614,12 @@ export function performFullTimingAnalysis(analysis, config = {}) {
       hold_violations: holdViolations,
       total_sequences: sequences.length,
       total_implications: implications.length,
-      total_ctq_measurements: ctqDelays.length
+      total_ctq_measurements: ctqDelays.length,
+      forbidden_transition_violations: forbiddenViolations,
+      critical_path_violations: criticalPathViolations,
+      clock_skew_violations: clockSkewViolations
     },
-    has_violations: setupViolations > 0 || holdViolations > 0
+    has_violations: setupViolations > 0 || holdViolations > 0 || forbiddenViolations > 0 || criticalPathViolations > 0 || clockSkewViolations > 0
   };
 }
 
