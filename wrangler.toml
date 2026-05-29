@@ -7,9 +7,15 @@ compatibility_flags = ["nodejs_compat"]
 bucket = "."
 
 [env.production]
-vars = { ENVIRONMENT = "production" }
+vars = {
+  ENVIRONMENT = "production",
+  ANALYSIS_TIMEOUT = "30000",
+  RATE_LIMIT_REQUESTS = "10",
+  RATE_LIMIT_WINDOW = "60000",
+  LOG_LEVEL = "info"
+}
 
 [[kv_namespaces]]
-binding = "CACHE"
-id = "pdf-summarizer-cache"
-preview_id = "pdf-summarizer-cache-preview"
+binding = "RATE_LIMIT_KV"
+id = "sva-rate-limit"
+preview_id = "sva-rate-limit-preview"

@@ -1,6 +1,7 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import { handleSummarize } from '../workers-site/api/summarize.js';
 import { handleGenerateSVA, handleValidateWavedrom } from '../workers-site/api/sva-generator.js';
+import { withReliability, StructuredLogger, addSecurityHeaders } from '../workers-site/middleware.js';
 
 // 導入靜態資源清單
 function importManifest() {
@@ -44,6 +45,8 @@ export default {
  * 處理 API 路由
  */
 async function handleApiRoute(pathname, request, env, ctx) {
+  const logger = new StructuredLogger(env);
+
   // CORS 預檢請求
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -55,37 +58,74 @@ async function handleApiRoute(pathname, request, env, ctx) {
     });
   }
 
-  // PDF 摘要 API
-  if (pathname === '/api/summarize' && request.method === 'POST') {
-    return handleSummarize(request, env, ctx);
-  }
-
-  // SVA 生成 API
+  // SVA 生成 API - 帶超時和速率限制保護
   if (pathname === '/api/generate-sva' && request.method === 'POST') {
-    return handleGenerateSVA(request, env, ctx);
+    return withReliability(
+      handleGenerateSVA,
+      request,
+      env,
+      ctx,
+      {
+        timeout: parseInt(env.ANALYSIS_TIMEOUT || '30000'),
+        enableRateLimit: true,
+        logger
+      }
+    ).then(addSecurityHeaders);
   }
 
-  // Wavedrom 驗證 API
+  // Wavedrom 驗證 API - 帶速率限制保護
   if (pathname === '/api/validate-wavedrom' && request.method === 'POST') {
-    return handleValidateWavedrom(request, env, ctx);
+    return withReliability(
+      handleValidateWavedrom,
+      request,
+      env,
+      ctx,
+      {
+        timeout: 5000,
+        enableRateLimit: true,
+        logger
+      }
+    ).then(addSecurityHeaders);
   }
 
-  // 健康檢查
+  // PDF 摘要 API (舊功能保留)
+  if (pathname === '/api/summarize' && request.method === 'POST') {
+    return withReliability(
+      handleSummarize,
+      request,
+      env,
+      ctx,
+      {
+        timeout: 60000, // 60 秒用於 PDF 處理
+        enableRateLimit: true,
+        logger
+      }
+    ).then(addSecurityHeaders);
+  }
+
+  // 健康檢查 (不受速率限制)
   if (pathname === '/api/health' && request.method === 'GET') {
-    return new Response(
+    const response = new Response(
       JSON.stringify({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        services: ['pdf-summarizer', 'sva-generator']
+        services: ['pdf-summarizer', 'sva-generator'],
+        environment: env.ENVIRONMENT || 'development'
       }),
       {
         headers: { 'Content-Type': 'application/json' },
       }
     );
+    return addSecurityHeaders(response);
   }
 
   return new Response(
-    JSON.stringify({ error: 'Not Found', message: `路由 ${pathname} 不存在` }),
+    JSON.stringify({
+      status: 'error',
+      code: 'NOT_FOUND',
+      message: `路由 ${pathname} 不存在`,
+      timestamp: new Date().toISOString()
+    }),
     {
       status: 404,
       headers: { 'Content-Type': 'application/json' },
