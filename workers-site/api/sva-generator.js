@@ -56,15 +56,20 @@ export async function handleGenerateSVA(request, env, ctx) {
 
     console.log(`[SVA Generator] 時序分析完成:`, timingAnalysis.statistics);
 
-    // 生成包含時序約束的 SVA 代碼
-    const svaCode = generateSVAWithConstraints(analysis, timingAnalysis, config);
+    // Phase 3: 生成可執行的 SVA 代碼（含信號聲明、去重、違規處理）
+    const svaCode = generateSVAWithConstraints(analysis, timingAnalysis, {
+      ...config,
+      uncomment_code: config.uncomment_code !== false,
+      generate_cover: config.generate_cover !== false,
+      min_implication_consistency: config.min_implication_consistency || 0.3
+    });
 
     // 統計分析結果
     const stats = getStatistics(analysis);
 
     const response = {
       status: 'success',
-      phase: 'Phase 2: Timing Analysis & SVA Generation',
+      phase: 'Phase 3: SVA Code Generation with Signal Declarations & Deduplication',
       sva_code: svaCode,
       analysis: {
         detected_relations: timingAnalysis.statistics.total_logic_relations,
@@ -183,33 +188,29 @@ export async function handleValidateWavedrom(request, env, ctx) {
 }
 
 /**
- * Phase 2: 生成包含時序約束的 SVA 模組
- * 根據檢測到的時序關係生成具體的 SVA assertions
+ * Phase 3: 生成可執行的 SVA 模組
+ * 包含信號聲明、實際時序約束和多種 assertion 指令
  */
 function generateSVAWithConstraints(analysis, timingAnalysis, config) {
   const moduleName = config.module_name || 'assertions';
   const timeUnit = config.time_unit || analysis.timeUnit;
   const assertionMode = config.assertion_mode || 'strict';
-  const clockName = analysis.clockSignals[0] || 'clk';
+  const uncommentCode = config.uncomment_code !== false; // Default true
+  const includeCover = config.generate_cover !== false; // Default true
+  const minImplicationConsistency = config.min_implication_consistency || 0.3;
 
   let code = `// SystemVerilog Assertions Module\n`;
   code += `// 自動生成自 Wavedrom 時序圖\n`;
   code += `// 生成時間: ${new Date().toISOString()}\n`;
-  code += `// 分析版本: Phase 2 - Timing Analysis\n\n`;
+  code += `// 分析版本: Phase 3 - SVA Code Generation\n\n`;
 
-  code += `module ${moduleName}(\n`;
-  code += `  input logic clk,\n`;
-  code += `  input logic reset_n\n`;
-  code += `);\n\n`;
+  // Phase 3A: 動態生成模組端口聲明（含所有信號）
+  code += generateModuleInterface(analysis, moduleName);
+  code += `\n`;
 
-  // 信號聲明
-  code += `// === 信號聲明 ===\n`;
-  code += `// 以下信號應從驗證環境中導入或聲明\n`;
-  analysis.signals.forEach(signal => {
-    const isClk = analysis.clockSignals.includes(signal.name);
-    const type = isClk ? '(時鐘)' : '';
-    code += `// logic ${signal.name}; ${type}\n`;
-  });
+  // 信號聲明（現在已在模組端口中）
+  code += `// === 內部信號 (已在模組端口中聲明) ===\n`;
+  code += `// 所有信號已作為輸入端口在模組介面中宣告\n`;
   code += `\n`;
 
   // 參數化配置
@@ -235,30 +236,38 @@ function generateSVAWithConstraints(analysis, timingAnalysis, config) {
   // Setup Time Constraints
   if (timingAnalysis.setup_time_constraints && timingAnalysis.setup_time_constraints.length > 0) {
     code += `// === Setup Time Constraints ===\n`;
-    timingAnalysis.setup_time_constraints.forEach((constraint, idx) => {
+    const deduped = deduplicateSetupConstraints(timingAnalysis.setup_time_constraints);
+    deduped.forEach((constraint, idx) => {
       const safetyMargin = constraint.setupTime >= (config.setup_margin || 2) ? '✓' : '✗';
-      code += `// [${safetyMargin}] ${constraint.description}\n`;
-      code += `// property setup_${constraint.dataSignal}_${idx};\n`;
-      code += `//   @(${constraint.clockEdge === 'rising_edge' ? 'posedge' : 'negedge'} ${constraint.clockSignal})\n`;
-      code += `//   disable iff(!DISABLE_ON_RESET)\n`;
-      code += `//   $stable(${constraint.dataSignal});\n`;
-      code += `// endproperty\n`;
-      code += `// assert_setup_${constraint.dataSignal}_${idx}: assert property(setup_${constraint.dataSignal}_${idx});\n\n`;
+      const directive = constraint.violation ? 'assume' : 'assert';
+      const commentPrefix = uncommentCode ? '' : '// ';
+
+      code += `${commentPrefix}// [${safetyMargin}] ${constraint.description}\n`;
+      code += `${commentPrefix}property prop_setup_${constraint.dataSignal}_before_${constraint.clockEdge.replace('_edge', '')}_${idx};\n`;
+      code += `${commentPrefix}  @(${constraint.clockEdge === 'rising_edge' ? 'posedge' : 'negedge'} ${constraint.clockSignal})\n`;
+      code += `${commentPrefix}  disable iff(!DISABLE_ON_RESET)\n`;
+      code += `${commentPrefix}  $stable(${constraint.dataSignal});\n`;
+      code += `${commentPrefix}endproperty\n`;
+      code += `${commentPrefix}${directive}_setup_${constraint.dataSignal}_${idx}: ${directive} property(prop_setup_${constraint.dataSignal}_before_${constraint.clockEdge.replace('_edge', '')}_${idx});\n\n`;
     });
   }
 
   // Hold Time Constraints
   if (timingAnalysis.hold_constraints && timingAnalysis.hold_constraints.length > 0) {
     code += `// === Hold Time Constraints ===\n`;
-    timingAnalysis.hold_constraints.forEach((constraint, idx) => {
+    const deduped = deduplicateHoldConstraints(timingAnalysis.hold_constraints);
+    deduped.forEach((constraint, idx) => {
       const safetyMargin = constraint.holdTime >= (config.hold_margin || 2) ? '✓' : '✗';
-      code += `// [${safetyMargin}] ${constraint.description}\n`;
-      code += `// property hold_${constraint.dataSignal}_${idx};\n`;
-      code += `//   @(${constraint.clockEdge === 'rising_edge' ? 'posedge' : 'negedge'} ${constraint.clockSignal})\n`;
-      code += `//   disable iff(!DISABLE_ON_RESET)\n`;
-      code += `//   ##1 $stable(${constraint.dataSignal});\n`;
-      code += `// endproperty\n`;
-      code += `// assert_hold_${constraint.dataSignal}_${idx}: assert property(hold_${constraint.dataSignal}_${idx});\n\n`;
+      const directive = constraint.violation ? 'assume' : 'assert';
+      const commentPrefix = uncommentCode ? '' : '// ';
+
+      code += `${commentPrefix}// [${safetyMargin}] ${constraint.description}\n`;
+      code += `${commentPrefix}property prop_hold_${constraint.dataSignal}_after_${constraint.clockEdge.replace('_edge', '')}_${idx};\n`;
+      code += `${commentPrefix}  @(${constraint.clockEdge === 'rising_edge' ? 'posedge' : 'negedge'} ${constraint.clockSignal})\n`;
+      code += `${commentPrefix}  disable iff(!DISABLE_ON_RESET)\n`;
+      code += `${commentPrefix}  ##1 $stable(${constraint.dataSignal});\n`;
+      code += `${commentPrefix}endproperty\n`;
+      code += `${commentPrefix}${directive}_hold_${constraint.dataSignal}_${idx}: ${directive} property(prop_hold_${constraint.dataSignal}_after_${constraint.clockEdge.replace('_edge', '')}_${idx});\n\n`;
     });
   }
 
@@ -266,48 +275,57 @@ function generateSVAWithConstraints(analysis, timingAnalysis, config) {
   if (timingAnalysis.logic_relations && timingAnalysis.logic_relations.length > 0) {
     code += `// === Logic Relations (Simultaneous Edges) ===\n`;
     timingAnalysis.logic_relations.forEach((relation, idx) => {
-      code += `// ${relation.description}\n`;
+      const commentPrefix = uncommentCode ? '' : '// ';
+      code += `${commentPrefix}// ${relation.description}\n`;
       if (relation.type === 'simultaneous_rising_edges') {
         const signals = relation.signals.join(' && ');
-        code += `// property simultaneous_rising_${idx};\n`;
-        code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
-        code += `//   (${signals});\n`;
-        code += `// endproperty\n`;
+        code += `${commentPrefix}property prop_simultaneous_rising_${idx};\n`;
+        code += `${commentPrefix}  @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+        code += `${commentPrefix}  (${signals});\n`;
+        code += `${commentPrefix}endproperty\n`;
+        code += `${commentPrefix}assert_logic_${idx}: assert property(prop_simultaneous_rising_${idx});\n\n`;
       } else if (relation.type === 'mixed_edges') {
-        code += `// property mixed_edges_${idx};\n`;
-        code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
-        code += `//   (${relation.rising.join(' || ')}) && (${relation.falling.join(' || ')});\n`;
-        code += `// endproperty\n`;
+        code += `${commentPrefix}property prop_mixed_edges_${idx};\n`;
+        code += `${commentPrefix}  @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+        code += `${commentPrefix}  (${relation.rising.join(' || ')}) && (${relation.falling.join(' || ')});\n`;
+        code += `${commentPrefix}endproperty\n`;
+        code += `${commentPrefix}assert_logic_${idx}: assert property(prop_mixed_edges_${idx});\n\n`;
       }
-      code += `// assert_logic_${idx}: assert property(simultaneous_rising_${idx});\n\n`;
     });
   }
 
   // Signal Sequences
-  if (timingAnalysis.sequences && timingAnalysis.sequences.length > 0) {
+  if (timingAnalysis.sequences && timingAnalysis.sequences.length > 0 && includeCover) {
     code += `// === Signal Sequences ===\n`;
-    timingAnalysis.sequences.forEach((seq, idx) => {
-      code += `// ${seq.description}\n`;
-      code += `// property sequence_${idx};\n`;
-      code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
-      // Simple sequence representation
+    const deduped = deduplicateSequences(timingAnalysis.sequences);
+    deduped.forEach((seq, idx) => {
+      const commentPrefix = uncommentCode ? '' : '// ';
+      const seqSignals = seq.signals.join('_');
+      code += `${commentPrefix}// ${seq.description} (出現 ${seq.occurrences} 次)\n`;
+      code += `${commentPrefix}property prop_sequence_${seqSignals}_${idx};\n`;
+      code += `${commentPrefix}  @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
       const seqStr = seq.signals.map(s => `${s}`).join(' ##[*] ');
-      code += `//   ${seqStr};\n`;
-      code += `// endproperty\n`;
-      code += `// assert_sequence_${idx}: assert property(sequence_${idx});\n\n`;
+      code += `${commentPrefix}  ${seqStr};\n`;
+      code += `${commentPrefix}endproperty\n`;
+      code += `${commentPrefix}cover_sequence_${idx}: cover property(prop_sequence_${seqSignals}_${idx});\n\n`;
     });
   }
 
   // Implications
   if (timingAnalysis.implications && timingAnalysis.implications.length > 0) {
     code += `// === Implications (Causal Relationships) ===\n`;
-    timingAnalysis.implications.forEach((impl, idx) => {
-      code += `// ${impl.description}\n`;
-      code += `// property implication_${idx};\n`;
-      code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
-      code += `//   ${impl.antecedent} |-> ##[1:${impl.delay}] ${impl.consequent};\n`;
-      code += `// endproperty\n`;
-      code += `// assert_implication_${idx}: assert property(implication_${idx});\n\n`;
+    const deduped = deduplicateImplications(timingAnalysis.implications, minImplicationConsistency);
+    deduped.forEach((impl, idx) => {
+      const consistencyNum = parseFloat(impl.consistency) / 100;
+      const directive = consistencyNum >= 0.5 ? 'assert' : 'assume';
+      const commentPrefix = uncommentCode ? '' : '// ';
+
+      code += `${commentPrefix}// ${impl.description}\n`;
+      code += `${commentPrefix}property prop_${impl.antecedent}_implies_${impl.consequent}_${idx};\n`;
+      code += `${commentPrefix}  @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+      code += `${commentPrefix}  ${impl.antecedent} |-> ##[1:${impl.delay}] ${impl.consequent};\n`;
+      code += `${commentPrefix}endproperty\n`;
+      code += `${commentPrefix}${directive}_implication_${idx}: ${directive} property(prop_${impl.antecedent}_implies_${impl.consequent}_${idx});\n\n`;
     });
   }
 
@@ -326,6 +344,130 @@ function generateSVAWithConstraints(analysis, timingAnalysis, config) {
   code += `endmodule : ${moduleName}\n`;
 
   return code;
+}
+
+/**
+ * Phase 3A: 生成模組介面（含信號聲明）
+ */
+function generateModuleInterface(analysis, moduleName) {
+  let code = `module ${moduleName}(\n`;
+  code += `  input logic clk,\n`;
+  code += `  input logic reset_n`;
+
+  // 列舉所有非時鐘、非預先宣告信號的信號作為輸入
+  const reservedSignals = new Set(['clk', 'reset_n']);
+  const dataSignals = analysis.signals.filter(
+    s => !analysis.clockSignals.includes(s.name) && !reservedSignals.has(s.name)
+  );
+
+  dataSignals.forEach((signal) => {
+    code += `,\n  input logic ${signal.name}`;
+  });
+
+  code += `\n);\n`;
+  return code;
+}
+
+/**
+ * Phase 3C: Setup Time 約束去重
+ */
+function deduplicateSetupConstraints(constraints) {
+  const seen = new Map();
+  const result = [];
+
+  constraints.forEach(constraint => {
+    const key = `${constraint.dataSignal}_${constraint.clockSignal}_${constraint.clockEdge}`;
+    if (!seen.has(key)) {
+      seen.set(key, constraint);
+      result.push(constraint);
+    } else {
+      // 保留更嚴格的約束（較大的 setupTime）
+      const existing = seen.get(key);
+      if (constraint.setupTime > existing.setupTime) {
+        const idx = result.indexOf(existing);
+        result[idx] = constraint;
+        seen.set(key, constraint);
+      }
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Phase 3C: Hold Time 約束去重
+ */
+function deduplicateHoldConstraints(constraints) {
+  const seen = new Map();
+  const result = [];
+
+  constraints.forEach(constraint => {
+    const key = `${constraint.dataSignal}_${constraint.clockSignal}_${constraint.clockEdge}`;
+    if (!seen.has(key)) {
+      seen.set(key, constraint);
+      result.push(constraint);
+    } else {
+      // 保留更嚴格的約束（較大的 holdTime）
+      const existing = seen.get(key);
+      if (constraint.holdTime > existing.holdTime) {
+        const idx = result.indexOf(existing);
+        result[idx] = constraint;
+        seen.set(key, constraint);
+      }
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Phase 3C: 信號序列去重
+ */
+function deduplicateSequences(sequences) {
+  const seen = new Map();
+  const result = [];
+
+  sequences.forEach(seq => {
+    const key = seq.signals.join('_');
+    if (!seen.has(key)) {
+      seen.set(key, seq);
+      result.push(seq);
+    } else {
+      // 累加出現次數
+      seen.get(key).occurrences += seq.occurrences;
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Phase 3C: 因果關係去重和過濾
+ */
+function deduplicateImplications(implications, minConsistency) {
+  const seen = new Map();
+  const result = [];
+
+  implications.forEach(impl => {
+    const consistencyNum = parseFloat(impl.consistency) / 100;
+    if (consistencyNum < minConsistency) return; // 過濾低一致性
+
+    const key = `${impl.antecedent}_${impl.consequent}`;
+    if (!seen.has(key)) {
+      seen.set(key, impl);
+      result.push(impl);
+    } else {
+      // 保留較可靠的（更高一致性）
+      const existing = seen.get(key);
+      if (consistencyNum > (parseFloat(existing.consistency) / 100)) {
+        const idx = result.indexOf(existing);
+        result[idx] = impl;
+        seen.set(key, impl);
+      }
+    }
+  });
+
+  return result;
 }
 
 /**
