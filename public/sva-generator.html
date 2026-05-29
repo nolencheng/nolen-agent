@@ -380,6 +380,181 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* 約束檢查面板 */
+    .constraints-section {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 15px;
+      border-top: 1px solid #ddd;
+      overflow: hidden;
+      background: #fafafa;
+    }
+
+    .constraints-panel {
+      display: flex;
+      flex-direction: column;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .constraints-header {
+      padding: 15px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+      font-weight: 600;
+      color: #667eea;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .constraints-tabs {
+      display: flex;
+      gap: 0;
+      padding: 10px;
+      background: white;
+      border-bottom: 1px solid #ddd;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      background: #f0f0f0;
+      color: #666;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.3s;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      background: #e8e8e8;
+    }
+
+    .tab-btn.active {
+      background: white;
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .constraints-content {
+      flex: 1;
+      overflow: auto;
+      padding: 15px;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .constraints-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+    }
+
+    .constraints-table thead {
+      background: #f0f0f0;
+      border-bottom: 2px solid #ddd;
+    }
+
+    .constraints-table th {
+      padding: 8px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      border-right: 1px solid #ddd;
+    }
+
+    .constraints-table th:last-child {
+      border-right: none;
+    }
+
+    .constraints-table td {
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+      border-right: 1px solid #eee;
+    }
+
+    .constraints-table td:last-child {
+      border-right: none;
+    }
+
+    .constraints-table tbody tr:hover {
+      background: #f9f9f9;
+    }
+
+    .violation {
+      color: #f44336;
+      font-weight: bold;
+    }
+
+    .pass {
+      color: #4caf50;
+    }
+
+    .consistency-low {
+      color: #ff9800;
+    }
+
+    .consistency-high {
+      color: #4caf50;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .summary-item {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+      border-left: 4px solid #667eea;
+    }
+
+    .summary-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .summary-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #999;
+      padding: 20px;
+      font-size: 12px;
+    }
+
+    #constraints-panel {
+      display: none;
+      height: 250px;
+      margin-top: 10px;
+    }
+
+    #constraints-panel.active {
+      display: flex;
+    }
   </style>
 </head>
 <body>
@@ -493,6 +668,98 @@
         <div class="messages" id="message-log"></div>
         <div class="loading" id="loading">
           <span class="spinner"></span>生成中...
+        </div>
+      </div>
+    </div>
+
+    <!-- 約束檢查面板 -->
+    <div id="constraints-panel" class="constraints-section">
+      <div class="constraints-panel">
+        <div class="constraints-header">
+          📊 時序約束分析
+          <span id="violation-indicator"></span>
+        </div>
+        <div class="constraints-tabs">
+          <button class="tab-btn active" onclick="switchConstraintTab('summary')" data-tab="summary">摘要</button>
+          <button class="tab-btn" onclick="switchConstraintTab('setup')" data-tab="setup">Setup Time</button>
+          <button class="tab-btn" onclick="switchConstraintTab('hold')" data-tab="hold">Hold Time</button>
+          <button class="tab-btn" onclick="switchConstraintTab('sequences')" data-tab="sequences">序列</button>
+          <button class="tab-btn" onclick="switchConstraintTab('implications')" data-tab="implications">因果關係</button>
+        </div>
+        <div class="constraints-content">
+          <!-- 摘要選項卡 -->
+          <div id="tab-summary" class="tab-content active">
+            <div class="summary-grid" id="summary-grid">
+              <div class="empty-state">載入中...</div>
+            </div>
+          </div>
+
+          <!-- Setup Time 選項卡 -->
+          <div id="tab-setup" class="tab-content">
+            <table class="constraints-table" id="setup-table">
+              <thead>
+                <tr>
+                  <th>數據信號</th>
+                  <th>時鐘信號</th>
+                  <th>Setup Time (ns)</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="setup-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="setup-empty">無 Setup 約束</div>
+          </div>
+
+          <!-- Hold Time 選項卡 -->
+          <div id="tab-hold" class="tab-content">
+            <table class="constraints-table" id="hold-table">
+              <thead>
+                <tr>
+                  <th>數據信號</th>
+                  <th>時鐘信號</th>
+                  <th>Hold Time (ns)</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="hold-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="hold-empty">無 Hold 約束</div>
+          </div>
+
+          <!-- 序列選項卡 -->
+          <div id="tab-sequences" class="tab-content">
+            <table class="constraints-table" id="sequences-table">
+              <thead>
+                <tr>
+                  <th>信號序列</th>
+                  <th>出現次數</th>
+                  <th>時間範圍 (ns)</th>
+                </tr>
+              </thead>
+              <tbody id="sequences-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="sequences-empty">無信號序列</div>
+          </div>
+
+          <!-- 因果關係選項卡 -->
+          <div id="tab-implications" class="tab-content">
+            <table class="constraints-table" id="implications-table">
+              <thead>
+                <tr>
+                  <th>前驅 → 後繼</th>
+                  <th>延遲 (ns)</th>
+                  <th>一致性</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="implications-tbody">
+              </tbody>
+            </table>
+            <div class="empty-state" id="implications-empty">無因果關係</div>
+          </div>
         </div>
       </div>
     </div>
@@ -752,6 +1019,11 @@
               hljs.highlightElement(codeElement);
             }
 
+            // 填充約束檢查面板
+            if (data.timing_analysis && data.analysis) {
+              populateConstraintsPanel(data.timing_analysis, data.analysis);
+            }
+
             addMessage('SVA 代碼已生成 ✓', 'success');
             if (data.analysis) {
               addMessage(`檢測到: ${data.analysis.detected_relations} 邏輯, ${data.analysis.detected_constraints} 時序, ${data.analysis.detected_sequences} 序列`, 'info');
@@ -797,6 +1069,166 @@
       a.click();
       URL.revokeObjectURL(url);
       addMessage('SVA 文件已下載', 'success');
+    }
+
+    // 約束面板 - 選項卡切換
+    function switchConstraintTab(tabName) {
+      // 隱藏所有選項卡內容
+      const contents = document.querySelectorAll('.tab-content');
+      contents.forEach(c => c.classList.remove('active'));
+
+      // 移除所有按鈕的 active 類
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(b => b.classList.remove('active'));
+
+      // 顯示選中的選項卡
+      const tabContent = document.getElementById('tab-' + tabName);
+      if (tabContent) {
+        tabContent.classList.add('active');
+      }
+
+      // 標記選中的按鈕
+      const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+      }
+    }
+
+    // 約束面板 - 填充數據
+    function populateConstraintsPanel(timingAnalysis, analysis) {
+      if (!timingAnalysis) return;
+
+      // 顯示面板
+      document.getElementById('constraints-panel').classList.add('active');
+
+      // 摘要選項卡
+      const summaryGrid = document.getElementById('summary-grid');
+      summaryGrid.innerHTML = `
+        <div class="summary-item">
+          <div class="summary-label">總信號數</div>
+          <div class="summary-value">${analysis.signals || 0}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">時鐘信號</div>
+          <div class="summary-value">${analysis.clock_signals?.length || 0}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">時序約束</div>
+          <div class="summary-value">${analysis.detected_constraints || 0}</div>
+        </div>
+        <div class="summary-item" style="border-left-color: ${analysis.setup_violations + analysis.hold_violations > 0 ? '#f44336' : '#4caf50'}">
+          <div class="summary-label">時序違規</div>
+          <div class="summary-value${analysis.setup_violations + analysis.hold_violations > 0 ? ' violation' : ' pass'}">${analysis.setup_violations + analysis.hold_violations}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">信號序列</div>
+          <div class="summary-value">${timingAnalysis.signal_sequences?.length || 0}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">因果關係</div>
+          <div class="summary-value">${timingAnalysis.implications?.length || 0}</div>
+        </div>
+      `;
+
+      // 違規指示器
+      const violationCount = (analysis.setup_violations || 0) + (analysis.hold_violations || 0);
+      const violationIndicator = document.getElementById('violation-indicator');
+      if (violationCount > 0) {
+        violationIndicator.innerHTML = `<span class="violation">⚠️ ${violationCount} 個違規</span>`;
+      } else {
+        violationIndicator.innerHTML = `<span class="pass">✓ 無違規</span>`;
+      }
+
+      // Setup Time 約束
+      const setupTbody = document.getElementById('setup-tbody');
+      const setupEmpty = document.getElementById('setup-empty');
+      setupTbody.innerHTML = '';
+
+      if (timingAnalysis.setup_constraints && timingAnalysis.setup_constraints.length > 0) {
+        setupEmpty.style.display = 'none';
+        document.getElementById('setup-table').style.display = 'table';
+        timingAnalysis.setup_constraints.forEach(c => {
+          const row = setupTbody.insertRow();
+          row.innerHTML = `
+            <td>${c.dataSignal}</td>
+            <td>${c.clockSignal}</td>
+            <td>${c.setupTime}</td>
+            <td class="${c.violation ? 'violation' : 'pass'}">${c.violation ? '✗ 違規' : '✓ 通過'}</td>
+          `;
+        });
+      } else {
+        setupEmpty.style.display = 'block';
+        document.getElementById('setup-table').style.display = 'none';
+      }
+
+      // Hold Time 約束
+      const holdTbody = document.getElementById('hold-tbody');
+      const holdEmpty = document.getElementById('hold-empty');
+      holdTbody.innerHTML = '';
+
+      if (timingAnalysis.hold_constraints && timingAnalysis.hold_constraints.length > 0) {
+        holdEmpty.style.display = 'none';
+        document.getElementById('hold-table').style.display = 'table';
+        timingAnalysis.hold_constraints.forEach(c => {
+          const row = holdTbody.insertRow();
+          row.innerHTML = `
+            <td>${c.dataSignal}</td>
+            <td>${c.clockSignal}</td>
+            <td>${c.holdTime}</td>
+            <td class="${c.violation ? 'violation' : 'pass'}">${c.violation ? '✗ 違規' : '✓ 通過'}</td>
+          `;
+        });
+      } else {
+        holdEmpty.style.display = 'block';
+        document.getElementById('hold-table').style.display = 'none';
+      }
+
+      // 信號序列
+      const sequencesTbody = document.getElementById('sequences-tbody');
+      const sequencesEmpty = document.getElementById('sequences-empty');
+      sequencesTbody.innerHTML = '';
+
+      if (timingAnalysis.signal_sequences && timingAnalysis.signal_sequences.length > 0) {
+        sequencesEmpty.style.display = 'none';
+        document.getElementById('sequences-table').style.display = 'table';
+        timingAnalysis.signal_sequences.forEach(s => {
+          const row = sequencesTbody.insertRow();
+          const duration = s.timings?.[0]?.duration ? ` (${s.timings[0].duration} ns)` : '';
+          row.innerHTML = `
+            <td>${s.signals.join(' → ')}</td>
+            <td>${s.occurrences}</td>
+            <td>${duration}</td>
+          `;
+        });
+      } else {
+        sequencesEmpty.style.display = 'block';
+        document.getElementById('sequences-table').style.display = 'none';
+      }
+
+      // 因果關係
+      const implicationsTbody = document.getElementById('implications-tbody');
+      const implicationsEmpty = document.getElementById('implications-empty');
+      implicationsTbody.innerHTML = '';
+
+      if (timingAnalysis.implications && timingAnalysis.implications.length > 0) {
+        implicationsEmpty.style.display = 'none';
+        document.getElementById('implications-table').style.display = 'table';
+        timingAnalysis.implications.forEach(i => {
+          const row = implicationsTbody.insertRow();
+          const consistencyNum = parseFloat(i.consistency) / 100;
+          const consistencyClass = consistencyNum >= 0.5 ? 'consistency-high' : 'consistency-low';
+          const statusClass = consistencyNum >= 0.5 ? 'pass' : 'warning';
+          row.innerHTML = `
+            <td>${i.antecedent} → ${i.consequent}</td>
+            <td>${i.delay}</td>
+            <td class="${consistencyClass}">${i.consistency}</td>
+            <td class="${statusClass}">${consistencyNum >= 0.5 ? '✓ 確定' : '⚠️ 可能'}</td>
+          `;
+        });
+      } else {
+        implicationsEmpty.style.display = 'block';
+        document.getElementById('implications-table').style.display = 'none';
+      }
     }
 
     // 初始化
