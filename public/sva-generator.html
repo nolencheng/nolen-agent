@@ -7,6 +7,9 @@
   <!-- Wavedrom.js for timing diagram rendering -->
   <script src="https://wavedrom.com/wavedrom.js"></script>
   <link rel="stylesheet" href="https://wavedrom.com/wavedrom.css">
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -214,9 +217,55 @@
       background: white;
       flex: 1;
       overflow: auto;
-      white-space: pre-wrap;
+      white-space: pre;
       word-wrap: break-word;
       color: #333;
+      line-height: 1.4;
+    }
+
+    #sva-preview code {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+    }
+
+    /* Highlight.js 自訂 SystemVerilog 樣式 */
+    .hljs {
+      background: white;
+      color: #333;
+    }
+
+    .hljs-keyword {
+      color: #0066cc;
+      font-weight: bold;
+    }
+
+    .hljs-built_in {
+      color: #0066cc;
+    }
+
+    .hljs-string {
+      color: #008000;
+    }
+
+    .hljs-number {
+      color: #ff6600;
+    }
+
+    .hljs-literal {
+      color: #ff6600;
+    }
+
+    .hljs-attr {
+      color: #0066cc;
+    }
+
+    .hljs-comment {
+      color: #999;
+      font-style: italic;
+    }
+
+    .hljs-title {
+      color: #000;
     }
 
     .preview-controls {
@@ -432,7 +481,7 @@
     <div class="bottom-section">
       <div class="sva-output-panel">
         <div class="panel-header">📄 SVA 代碼預覽</div>
-        <div id="sva-preview">// 點擊「生成 SVA 代碼」按鈕查看結果</div>
+        <pre id="sva-preview"><code id="sva-code-content" class="language-systemverilog">// 點擊「生成 SVA 代碼」按鈕查看結果</code></pre>
         <div class="preview-controls">
           <button onclick="copySVA()" class="secondary">📋 複製</button>
           <button onclick="downloadSVA()" class="secondary">⬇️ 下載</button>
@@ -450,6 +499,42 @@
   </div>
 
   <script>
+    // 註冊 SystemVerilog 語言定義給 Highlight.js
+    if (typeof hljs !== 'undefined') {
+      hljs.registerLanguage('systemverilog', function(hljs) {
+        return {
+          case_insensitive: false,
+          keywords: {
+            keyword: 'module endmodule input output parameter always @posedge @negedge if else case default always_comb always_ff initial ' +
+                     'property endproperty assert assume cover sequence assert_property assume_property cover_property ' +
+                     'disable iff ##',
+            type: 'logic bit int reg wire string real bit void',
+            literal: '0 1'
+          },
+          contains: [
+            hljs.C_LINE_COMMENT_MODE,
+            hljs.C_BLOCK_COMMENT_MODE,
+            hljs.QUOTE_STRING_MODE,
+            {
+              className: 'number',
+              begin: '\\b([0-9]\'[0-9a-fA-FxXzZ_]+)',
+              relevance: 0
+            },
+            {
+              className: 'number',
+              begin: '\\b\\d+\\b',
+              relevance: 0
+            },
+            {
+              className: 'symbol',
+              begin: '[|&~^]|<<|>>|\\*\\*|\\+=|-=|\\*=|/=|%=|&=|\\^=|<<=|>>=|===|!==|==|!=|<=|>=|->|\\|->',
+              relevance: 0
+            }
+          ]
+        };
+      });
+    }
+
     // 示例 Wavedrom 數據
     const EXAMPLE_WAVEDROM = {
       signal: [
@@ -658,7 +743,15 @@
         .then(data => {
           document.getElementById('loading').classList.remove('active');
           if (data.status === 'success') {
-            document.getElementById('sva-preview').textContent = data.sva_code;
+            const codeElement = document.getElementById('sva-code-content');
+            codeElement.textContent = data.sva_code;
+            codeElement.className = 'language-systemverilog';
+
+            // 應用語法高亮
+            if (typeof hljs !== 'undefined') {
+              hljs.highlightElement(codeElement);
+            }
+
             addMessage('SVA 代碼已生成 ✓', 'success');
             if (data.analysis) {
               addMessage(`檢測到: ${data.analysis.detected_relations} 邏輯, ${data.analysis.detected_constraints} 時序, ${data.analysis.detected_sequences} 序列`, 'info');
@@ -681,7 +774,7 @@
 
     // 預覽控制
     function copySVA() {
-      const text = document.getElementById('sva-preview').textContent;
+      const text = document.getElementById('sva-code-content').textContent;
       navigator.clipboard.writeText(text).then(() => {
         addMessage('已複製到剪貼板', 'success');
       }).catch(() => {
@@ -690,7 +783,7 @@
     }
 
     function downloadSVA() {
-      const text = document.getElementById('sva-preview').textContent;
+      const text = document.getElementById('sva-code-content').textContent;
       if (!text || text.includes('點擊')) {
         addMessage('沒有 SVA 代碼可下載', 'warning');
         return;
