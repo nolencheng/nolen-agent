@@ -597,6 +597,70 @@
     #constraints-panel.active {
       display: flex;
     }
+
+    /* 預設面板 */
+    .preset-section {
+      background: #f0f4ff;
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 12px;
+      border-left: 4px solid #667eea;
+    }
+
+    .preset-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .preset-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-dropdown {
+      flex: 1;
+      min-width: 150px;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+      background: white;
+    }
+
+    .preset-btn {
+      padding: 6px 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.3s;
+    }
+
+    .preset-btn:hover {
+      background: #764ba2;
+    }
+
+    .preset-btn.secondary {
+      background: #999;
+    }
+
+    .preset-btn.secondary:hover {
+      background: #777;
+    }
+
+    .preset-info {
+      font-size: 10px;
+      color: #666;
+      margin-top: 6px;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -690,6 +754,25 @@
               <label for="include-cover">包含 cover</label>
             </div>
           </div>
+        </div>
+
+        <!-- 預設組態 -->
+        <div class="preset-section">
+          <label class="preset-label">⭐ 預設組態</label>
+          <div class="preset-controls">
+            <select class="preset-dropdown" id="preset-selector">
+              <option value="">載入預設...</option>
+              <option value="strict">嚴格 (Strict)</option>
+              <option value="coverage">涵蓋 (Coverage)</option>
+              <option value="minimal">最小 (Minimal)</option>
+            </select>
+            <button class="preset-btn" onclick="loadSelectedPreset()">載入</button>
+          </div>
+          <div class="preset-controls">
+            <input type="text" id="preset-name" class="preset-dropdown" placeholder="輸入預設名稱...">
+            <button class="preset-btn secondary" onclick="saveCurrentPreset()">💾 存存</button>
+          </div>
+          <div class="preset-info" id="preset-info">目前: 預設值</div>
         </div>
 
         <button onclick="generateSVA()" style="width: 100%; margin-top: 10px;">
@@ -1373,9 +1456,177 @@
       }
     }
 
+    // 預設組態定義
+    const PRESETS = {
+      strict: {
+        name: '嚴格 (Strict)',
+        config: {
+          'check-logic': true,
+          'check-timing': true,
+          'check-sequence': true,
+          'check-implication': true,
+          'time-unit': 'ns',
+          'assertion-mode': 'strict',
+          'include-assume': false,
+          'include-cover': true
+        }
+      },
+      coverage: {
+        name: '涵蓋 (Coverage)',
+        config: {
+          'check-logic': true,
+          'check-timing': true,
+          'check-sequence': true,
+          'check-implication': true,
+          'time-unit': 'ns',
+          'assertion-mode': 'strict',
+          'include-assume': true,
+          'include-cover': true
+        }
+      },
+      minimal: {
+        name: '最小 (Minimal)',
+        config: {
+          'check-logic': false,
+          'check-timing': true,
+          'check-sequence': false,
+          'check-implication': false,
+          'time-unit': 'ns',
+          'assertion-mode': 'relaxed',
+          'include-assume': false,
+          'include-cover': false
+        }
+      }
+    };
+
+    // 取得當前設定
+    function getCurrentConfig() {
+      return {
+        'check-logic': document.getElementById('check-logic').checked,
+        'check-timing': document.getElementById('check-timing').checked,
+        'check-sequence': document.getElementById('check-sequence').checked,
+        'check-implication': document.getElementById('check-implication').checked,
+        'time-unit': document.getElementById('time-unit').value,
+        'assertion-mode': document.getElementById('assertion-mode').value,
+        'include-assume': document.getElementById('include-assume').checked,
+        'include-cover': document.getElementById('include-cover').checked
+      };
+    }
+
+    // 套用設定到 UI
+    function applyConfig(config) {
+      if (config['check-logic'] !== undefined) document.getElementById('check-logic').checked = config['check-logic'];
+      if (config['check-timing'] !== undefined) document.getElementById('check-timing').checked = config['check-timing'];
+      if (config['check-sequence'] !== undefined) document.getElementById('check-sequence').checked = config['check-sequence'];
+      if (config['check-implication'] !== undefined) document.getElementById('check-implication').checked = config['check-implication'];
+      if (config['time-unit']) document.getElementById('time-unit').value = config['time-unit'];
+      if (config['assertion-mode']) document.getElementById('assertion-mode').value = config['assertion-mode'];
+      if (config['include-assume'] !== undefined) document.getElementById('include-assume').checked = config['include-assume'];
+      if (config['include-cover'] !== undefined) document.getElementById('include-cover').checked = config['include-cover'];
+    }
+
+    // 載入選定的預設
+    function loadSelectedPreset() {
+      const selector = document.getElementById('preset-selector');
+      const presetName = selector.value;
+
+      if (!presetName) {
+        addMessage('請選擇一個預設', 'warning');
+        return;
+      }
+
+      // 檢查自定義預設
+      let config;
+      if (PRESETS[presetName]) {
+        config = PRESETS[presetName].config;
+        document.getElementById('preset-info').textContent = `目前: ${PRESETS[presetName].name}`;
+      } else {
+        // 從 localStorage 載入自定義預設
+        const saved = localStorage.getItem('sva-preset-' + presetName);
+        if (saved) {
+          config = JSON.parse(saved);
+          document.getElementById('preset-info').textContent = `目前: ${presetName} (自定義)`;
+        } else {
+          addMessage('預設不存在', 'error');
+          return;
+        }
+      }
+
+      applyConfig(config);
+      addMessage(`已載入預設: ${presetName}`, 'success');
+
+      // 自動保存此預設作為上次使用的設定
+      localStorage.setItem('sva-last-preset', presetName);
+    }
+
+    // 保存當前設定為預設
+    function saveCurrentPreset() {
+      const input = document.getElementById('preset-name');
+      const presetName = input.value.trim();
+
+      if (!presetName) {
+        addMessage('請輸入預設名稱', 'warning');
+        return;
+      }
+
+      if (PRESETS[presetName]) {
+        addMessage('此名稱與內置預設重複，請使用其他名稱', 'error');
+        return;
+      }
+
+      const config = getCurrentConfig();
+      localStorage.setItem('sva-preset-' + presetName, JSON.stringify(config));
+
+      // 添加到下拉菜單
+      const selector = document.getElementById('preset-selector');
+      const option = document.createElement('option');
+      option.value = presetName;
+      option.textContent = `${presetName} (自定義)`;
+      selector.appendChild(option);
+
+      addMessage(`預設已保存: ${presetName}`, 'success');
+      input.value = '';
+
+      // 更新預設資訊
+      document.getElementById('preset-info').textContent = `目前: ${presetName} (自定義)`;
+      localStorage.setItem('sva-last-preset', presetName);
+    }
+
+    // 初始化預設列表（添加已保存的自定義預設到下拉菜單）
+    function initializePresetList() {
+      const selector = document.getElementById('preset-selector');
+
+      // 從 localStorage 恢復已保存的自定義預設
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('sva-preset-')) {
+          const presetName = key.replace('sva-preset-', '');
+          // 檢查此預設是否已在列表中（跳過內置預設）
+          if (!PRESETS[presetName] && ![...selector.options].some(o => o.value === presetName)) {
+            const option = document.createElement('option');
+            option.value = presetName;
+            option.textContent = `${presetName} (自定義)`;
+            selector.appendChild(option);
+          }
+        }
+      }
+    }
+
+    // 自動載入上次使用的預設
+    function autoLoadLastPreset() {
+      const lastPreset = localStorage.getItem('sva-last-preset');
+      if (lastPreset) {
+        const selector = document.getElementById('preset-selector');
+        selector.value = lastPreset;
+        loadSelectedPreset();
+      }
+    }
+
     // 初始化
     window.addEventListener('DOMContentLoaded', () => {
       addMessage('SVA 生成器已就緒', 'success');
+      initializePresetList();
+      autoLoadLastPreset();
     });
   </script>
 </body>
