@@ -167,43 +167,56 @@ export function detectHoldTimeConstraints(events, clockSignals, holdMargin = 2) 
  */
 export function detectSequences(events, maxSequenceLength = 5) {
   const sequences = [];
-  const signalEvents = {};
+  const sequenceMap = new Map();
 
-  // 按信號分組事件
-  events.forEach(event => {
-    if (!signalEvents[event.signal]) {
-      signalEvents[event.signal] = [];
-    }
-    signalEvents[event.signal].push(event);
-  });
+  // 按時間排序事件
+  const sortedEvents = [...events].sort((a, b) => a.time - b.time);
 
-  // 尋找信號轉換序列
-  const signals = Object.keys(signalEvents);
+  // 滑動窗口方法：掃描事件流尋找實際出現的序列
+  for (let seqLen = 2; seqLen <= Math.min(maxSequenceLength, Math.min(10, sortedEvents.length)); seqLen++) {
+    for (let i = 0; i <= sortedEvents.length - seqLen; i++) {
+      // 檢查窗口內是否有重複信號
+      const window = sortedEvents.slice(i, i + seqLen);
+      const signalsInWindow = window.map(e => e.signal);
 
-  // 檢查所有可能的序列長度
-  for (let seqLen = 2; seqLen <= Math.min(maxSequenceLength, signals.length); seqLen++) {
-    // 生成所有 seqLen 長度的信號組合
-    const combinations = generateCombinations(signals, seqLen);
-
-    combinations.forEach(signalSequence => {
-      // 檢查這個序列是否在事件中出現
-      const sequenceOccurrences = findSequenceOccurrences(
-        events,
-        signalSequence,
-        signalEvents
-      );
-
-      if (sequenceOccurrences.length > 0) {
-        sequences.push({
-          type: 'signal_sequence',
-          signals: signalSequence,
-          occurrences: sequenceOccurrences.length,
-          timings: sequenceOccurrences,
-          description: `序列: ${signalSequence.join(' → ')} (出現 ${sequenceOccurrences.length} 次)`
-        });
+      // 跳過有重複信號的序列
+      if (new Set(signalsInWindow).size !== signalsInWindow.length) {
+        continue;
       }
+
+      // 建立序列鍵
+      const sequenceKey = signalsInWindow.join('→');
+
+      if (!sequenceMap.has(sequenceKey)) {
+        sequenceMap.set(sequenceKey, []);
+      }
+
+      // 計算序列的時間範圍
+      const duration = window[window.length - 1].time - window[0].time;
+
+      sequenceMap.get(sequenceKey).push({
+        startTime: window[0].time,
+        endTime: window[window.length - 1].time,
+        duration,
+        signals: signalsInWindow
+      });
+    }
+  }
+
+  // 轉換序列映射為輸出格式
+  for (const [sequenceKey, occurrences] of sequenceMap.entries()) {
+    const signals = sequenceKey.split('→');
+    sequences.push({
+      type: 'signal_sequence',
+      signals,
+      occurrences: occurrences.length,
+      timings: occurrences,
+      description: `序列: ${signals.join(' → ')} (出現 ${occurrences.length} 次)`
     });
   }
+
+  // 按出現次數排序
+  sequences.sort((a, b) => b.occurrences - a.occurrences);
 
   return sequences;
 }
@@ -218,6 +231,7 @@ export function detectImplications(events, maxDelay = 5) {
   const implications = [];
   const eventsBySignal = {};
 
+  // 按信號分組事件
   events.forEach(event => {
     if (!eventsBySignal[event.signal]) {
       eventsBySignal[event.signal] = [];
@@ -226,59 +240,64 @@ export function detectImplications(events, maxDelay = 5) {
   });
 
   const signals = Object.keys(eventsBySignal);
+  const uniqueImplications = new Map(); // 去重用
 
-  // 檢查每對信號之間的關係
+  // 只檢查信號對一次（優化：避免對稱檢查）
   for (let i = 0; i < signals.length; i++) {
+    const signal1 = signals[i];
+    const events1 = eventsBySignal[signal1];
+
     for (let j = 0; j < signals.length; j++) {
       if (i === j) continue;
 
-      const signal1 = signals[i];
       const signal2 = signals[j];
-      const events1 = eventsBySignal[signal1];
       const events2 = eventsBySignal[signal2];
+      const pairKey = `${signal1}→${signal2}`;
 
-      // 檢查 signal1 的每個事件是否導致 signal2 的後續事件
-      events1.forEach((event1, idx1) => {
-        // 尋找在 event1 之後發生的 signal2 事件
-        const followingEvents = events2.filter(e =>
+      // 快速一致性檢查：計算events1中有多少導致events2轉換
+      let totalMatches = 0;
+      let bestMatch = null;
+
+      for (const event1 of events1) {
+        const followingInRange = events2.filter(e =>
           e.time > event1.time &&
           e.time <= event1.time + maxDelay
         );
 
-        if (followingEvents.length > 0) {
-          const followingEvent = followingEvents[0]; // 取最近的後續事件
-          const delay = followingEvent.time - event1.time;
-          const frequency = followingEvents.length;
-
-          // 計算這個因果關係的一致性（出現頻率）
-          const consistency = frequency / Math.max(events1.length, events2.length);
-
-          if (consistency > 0.3) { // 至少 30% 的一致性
-            implications.push({
-              type: 'implication',
-              antecedent: signal1,
-              antecedentEvent: event1.eventType,
-              consequent: signal2,
-              consequentEvent: followingEvent.eventType,
-              delay: delay,
-              occurrences: frequency,
-              consistency: (consistency * 100).toFixed(1) + '%',
-              description: `${signal1} (${event1.eventType}) |-> ${signal2} (${followingEvent.eventType}) [延遲: ${delay}ns, 一致性: ${(consistency * 100).toFixed(1)}%]`
-            });
+        if (followingInRange.length > 0) {
+          totalMatches += followingInRange.length;
+          if (!bestMatch || followingInRange[0].time - event1.time < bestMatch.delay) {
+            bestMatch = {
+              event: followingInRange[0],
+              delay: followingInRange[0].time - event1.time,
+              count: followingInRange.length
+            };
           }
         }
-      });
+      }
+
+      // 計算一致性並檢查是否超過閾值
+      if (bestMatch) {
+        const consistency = totalMatches / (events1.length * events2.length);
+
+        if (consistency > 0.3 && !uniqueImplications.has(pairKey)) {
+          uniqueImplications.set(pairKey, {
+            type: 'implication',
+            antecedent: signal1,
+            antecedentEvent: 'rising_edge',
+            consequent: signal2,
+            consequentEvent: bestMatch.event.eventType,
+            delay: bestMatch.delay,
+            occurrences: totalMatches,
+            consistency: (consistency * 100).toFixed(1) + '%',
+            description: `${signal1} |-> ${signal2} [延遲: ${bestMatch.delay}ns, 一致性: ${(consistency * 100).toFixed(1)}%]`
+          });
+        }
+      }
     }
   }
 
-  // 去重複
-  return implications.filter((v, i, a) =>
-    a.findIndex(t =>
-      t.antecedent === v.antecedent &&
-      t.consequent === v.consequent &&
-      t.delay === v.delay
-    ) === i
-  );
+  return Array.from(uniqueImplications.values());
 }
 
 /**
