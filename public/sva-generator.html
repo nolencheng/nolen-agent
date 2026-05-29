@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SystemVerilog Assertion 自動生成器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 95vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 5px;
+    }
+
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      padding: 15px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      font-weight: 600;
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    /* 編輯器面板 */
+    #json-editor {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      flex: 1;
+      resize: none;
+      background: white;
+    }
+
+    .editor-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 8px 16px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #764ba2;
+    }
+
+    button.secondary {
+      background: #999;
+    }
+
+    button.secondary:hover {
+      background: #777;
+    }
+
+    /* 波形視覺化面板 */
+    #waveform-container {
+      flex: 1;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      overflow: auto;
+    }
+
+    .waveform-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #999;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    /* 配置面板 */
+    .config-section {
+      margin-bottom: 15px;
+    }
+
+    .config-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 5px;
+      display: block;
+    }
+
+    .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    .config-select {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* 預覽面板 */
+    #sva-preview {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+      flex: 1;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #333;
+    }
+
+    .preview-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* 底部預覽和控制 */
+    .bottom-section {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
+      padding: 15px;
+      border-top: 1px solid #ddd;
+      overflow: hidden;
+    }
+
+    .sva-output-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sva-output-panel .panel-header {
+      margin-bottom: 8px;
+    }
+
+    .messages {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 150px;
+    }
+
+    .message {
+      margin-bottom: 5px;
+      padding: 5px;
+      border-left: 3px solid #ccc;
+      padding-left: 8px;
+    }
+
+    .message.success {
+      border-left-color: #4caf50;
+      color: #4caf50;
+    }
+
+    .message.error {
+      border-left-color: #f44336;
+      color: #f44336;
+    }
+
+    .message.warning {
+      border-left-color: #ff9800;
+      color: #ff9800;
+    }
+
+    .message.info {
+      border-left-color: #2196f3;
+      color: #2196f3;
+    }
+
+    /* 響應式設計 */
+    @media (max-width: 1024px) {
+      .main-layout {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .bottom-section {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .container {
+        height: auto;
+      }
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      color: #667eea;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .spinner {
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚡ SystemVerilog Assertion 自動生成器</h1>
+      <p>將 Wavedrom 時序圖轉換為 SVA 代碼</p>
+    </div>
+
+    <div class="main-layout">
+      <!-- 左面板：JSON 編輯器 -->
+      <div class="panel">
+        <div class="panel-header">📝 Wavedrom JSON</div>
+        <textarea id="json-editor" placeholder="貼上或上傳 Wavedrom JSON..."></textarea>
+        <div class="editor-controls">
+          <button onclick="loadExample()">📌 示例</button>
+          <button class="secondary" onclick="clearEditor()">清除</button>
+          <button class="secondary" onclick="validateJSON()">驗證</button>
+        </div>
+      </div>
+
+      <!-- 中面板：波形視覺化 -->
+      <div class="panel">
+        <div class="panel-header">🌊 時序圖視覺化</div>
+        <div id="waveform-container">
+          <div class="waveform-placeholder">
+            上傳或貼上 Wavedrom JSON 以顯示時序圖
+          </div>
+        </div>
+      </div>
+
+      <!-- 右面板：配置 -->
+      <div class="panel">
+        <div class="panel-header">⚙️ 生成配置</div>
+
+        <div class="config-section">
+          <label class="config-label">Assertion 類型</label>
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-logic" checked>
+              <label for="check-logic">邏輯關係</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-timing" checked>
+              <label for="check-timing">時序約束</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-sequence" checked>
+              <label for="check-sequence">序列模式</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="check-implication" checked>
+              <label for="check-implication">因果關係</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">時間單位</label>
+          <select class="config-select" id="time-unit">
+            <option value="ps">皮秒 (ps)</option>
+            <option value="ns" selected>納秒 (ns)</option>
+            <option value="us">微秒 (us)</option>
+          </select>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">生成模式</label>
+          <select class="config-select" id="assertion-mode">
+            <option value="strict" selected>嚴格 (Strict)</option>
+            <option value="relaxed">寬鬆 (Relaxed)</option>
+          </select>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">輸出選項</label>
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="include-assume">
+              <label for="include-assume">包含 assume</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="include-cover">
+              <label for="include-cover">包含 cover</label>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="generateSVA()" style="width: 100%; margin-top: 10px;">
+          🚀 生成 SVA 代碼
+        </button>
+      </div>
+    </div>
+
+    <!-- 底部：預覽和消息 -->
+    <div class="bottom-section">
+      <div class="sva-output-panel">
+        <div class="panel-header">📄 SVA 代碼預覽</div>
+        <div id="sva-preview">// 點擊「生成 SVA 代碼」按鈕查看結果</div>
+        <div class="preview-controls">
+          <button onclick="copySVA()" class="secondary">📋 複製</button>
+          <button onclick="downloadSVA()" class="secondary">⬇️ 下載</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel-header">📢 消息日誌</div>
+        <div class="messages" id="message-log"></div>
+        <div class="loading" id="loading">
+          <span class="spinner"></span>生成中...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 示例 Wavedrom 數據
+    const EXAMPLE_WAVEDROM = {
+      signal: [
+        { name: "clk", wave: "p.p.p.p.p." },
+        { name: "reset_n", wave: "0.1......." },
+        { name: "data", wave: "x.3.x.4.x", data: ["A", "B"] },
+        { name: "valid", wave: "0.1.0.1.0" }
+      ],
+      config: {
+        hscale: 1,
+        vscale: 1
+      }
+    };
+
+    // 日誌管理
+    function addMessage(msg, type = 'info') {
+      const log = document.getElementById('message-log');
+      const msgEl = document.createElement('div');
+      msgEl.className = `message ${type}`;
+      msgEl.textContent = new Date().toLocaleTimeString() + ' - ' + msg;
+      log.appendChild(msgEl);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function clearMessages() {
+      document.getElementById('message-log').innerHTML = '';
+    }
+
+    // 編輯器控制
+    function loadExample() {
+      document.getElementById('json-editor').value = JSON.stringify(EXAMPLE_WAVEDROM, null, 2);
+      addMessage('已載入示例 Wavedrom JSON', 'info');
+    }
+
+    function clearEditor() {
+      document.getElementById('json-editor').value = '';
+      addMessage('編輯器已清除', 'info');
+    }
+
+    function validateJSON() {
+      const text = document.getElementById('json-editor').value;
+      if (!text.trim()) {
+        addMessage('編輯器為空', 'warning');
+        return;
+      }
+
+      try {
+        const json = JSON.parse(text);
+        addMessage('JSON 格式正確 ✓', 'success');
+        // 嘗試從 API 驗證
+        fetch('/api/validate-wavedrom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wavedrom: json })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.valid) {
+            addMessage(`檢測到 ${data.signals.length} 個信號`, 'success');
+          } else {
+            addMessage(data.errors?.join('; ') || '驗證失敗', 'error');
+          }
+        })
+        .catch(err => addMessage('API 調用失敗: ' + err.message, 'error'));
+      } catch (e) {
+        addMessage('JSON 格式錯誤: ' + e.message, 'error');
+      }
+    }
+
+    // SVA 生成
+    function generateSVA() {
+      clearMessages();
+      const text = document.getElementById('json-editor').value;
+
+      if (!text.trim()) {
+        addMessage('請先貼上 Wavedrom JSON', 'error');
+        return;
+      }
+
+      try {
+        const wavedrom = JSON.parse(text);
+        const config = {
+          assertion_types: {
+            logic_relations: document.getElementById('check-logic').checked,
+            timing_constraints: document.getElementById('check-timing').checked,
+            sequence_patterns: document.getElementById('check-sequence').checked,
+            implications: document.getElementById('check-implication').checked
+          },
+          assertion_mode: document.getElementById('assertion-mode').value,
+          time_unit: document.getElementById('time-unit').value,
+          include_assume: document.getElementById('include-assume').checked,
+          include_cover: document.getElementById('include-cover').checked
+        };
+
+        document.getElementById('loading').classList.add('active');
+
+        fetch('/api/generate-sva', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wavedrom, config })
+        })
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('loading').classList.remove('active');
+          if (data.status === 'success') {
+            document.getElementById('sva-preview').textContent = data.sva_code;
+            addMessage('SVA 代碼已生成 ✓', 'success');
+            if (data.analysis) {
+              addMessage(`檢測到: ${data.analysis.detected_relations} 邏輯, ${data.analysis.detected_constraints} 時序, ${data.analysis.detected_sequences} 序列`, 'info');
+            }
+          } else {
+            addMessage(data.message || '生成失敗', 'error');
+          }
+        })
+        .catch(err => {
+          document.getElementById('loading').classList.remove('active');
+          addMessage('API 錯誤: ' + err.message, 'error');
+        });
+      } catch (e) {
+        addMessage('JSON 解析失敗: ' + e.message, 'error');
+      }
+    }
+
+    // 預覽控制
+    function copySVA() {
+      const text = document.getElementById('sva-preview').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        addMessage('已複製到剪貼板', 'success');
+      }).catch(() => {
+        addMessage('複製失敗', 'error');
+      });
+    }
+
+    function downloadSVA() {
+      const text = document.getElementById('sva-preview').textContent;
+      if (!text || text.includes('點擊')) {
+        addMessage('沒有 SVA 代碼可下載', 'warning');
+        return;
+      }
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'assertions.sv';
+      a.click();
+      URL.revokeObjectURL(url);
+      addMessage('SVA 文件已下載', 'success');
+    }
+
+    // 初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      addMessage('SVA 生成器已就緒', 'success');
+    });
+  </script>
+</body>
+</html>

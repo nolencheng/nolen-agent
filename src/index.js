@@ -1,5 +1,6 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import { handleSummarize } from '../workers-site/api/summarize.js';
+import { handleGenerateSVA, handleValidateWavedrom } from '../workers-site/api/sva-generator.js';
 
 // 導入靜態資源清單
 function importManifest() {
@@ -54,14 +55,29 @@ async function handleApiRoute(pathname, request, env, ctx) {
     });
   }
 
-  // 路由到不同的 API 處理器
+  // PDF 摘要 API
   if (pathname === '/api/summarize' && request.method === 'POST') {
     return handleSummarize(request, env, ctx);
   }
 
+  // SVA 生成 API
+  if (pathname === '/api/generate-sva' && request.method === 'POST') {
+    return handleGenerateSVA(request, env, ctx);
+  }
+
+  // Wavedrom 驗證 API
+  if (pathname === '/api/validate-wavedrom' && request.method === 'POST') {
+    return handleValidateWavedrom(request, env, ctx);
+  }
+
+  // 健康檢查
   if (pathname === '/api/health' && request.method === 'GET') {
     return new Response(
-      JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }),
+      JSON.stringify({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        services: ['pdf-summarizer', 'sva-generator']
+      }),
       {
         headers: { 'Content-Type': 'application/json' },
       }
