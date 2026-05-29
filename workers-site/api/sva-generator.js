@@ -10,6 +10,10 @@ import {
   toReadableText
 } from '../modules/wavedrom-parser.js';
 
+import {
+  performFullTimingAnalysis
+} from '../modules/timing-analyzer.js';
+
 /**
  * 處理 POST /api/generate-sva 請求
  * 接收 Wavedrom JSON + 配置，返回生成的 SVA 代碼
@@ -42,26 +46,49 @@ export async function handleGenerateSVA(request, env, ctx) {
 
     console.log(`[SVA Generator] 解析完成: ${analysis.signals.length} 個信號, ${analysis.events.length} 個事件`);
 
-    // Phase 1: 簡單的 SVA 代碼框架生成
-    const svaCode = generateBasicSVAModule(analysis, config);
+    // Phase 2: 執行完整時序分析
+    const timingAnalysis = performFullTimingAnalysis(analysis, {
+      setupMargin: config.setup_margin || 2,
+      holdMargin: config.hold_margin || 2,
+      maxDelay: config.max_delay || 5,
+      maxSequenceLength: config.max_sequence_length || 5
+    });
+
+    console.log(`[SVA Generator] 時序分析完成:`, timingAnalysis.statistics);
+
+    // 生成包含時序約束的 SVA 代碼
+    const svaCode = generateSVAWithConstraints(analysis, timingAnalysis, config);
 
     // 統計分析結果
     const stats = getStatistics(analysis);
 
     const response = {
       status: 'success',
-      phase: 'Phase 1: Basic SVA Generation',
+      phase: 'Phase 2: Timing Analysis & SVA Generation',
       sva_code: svaCode,
       analysis: {
-        detected_relations: 0,  // Phase 2 會實現
-        detected_constraints: 0,
-        detected_sequences: 0,
+        detected_relations: timingAnalysis.statistics.total_logic_relations,
+        detected_constraints: timingAnalysis.statistics.total_setup_constraints + timingAnalysis.statistics.total_hold_constraints,
+        detected_sequences: timingAnalysis.statistics.total_sequences,
+        detected_implications: timingAnalysis.statistics.total_implications,
+        setup_violations: timingAnalysis.statistics.setup_violations,
+        hold_violations: timingAnalysis.statistics.hold_violations,
         signals: analysis.signals.length,
         events: analysis.events.length,
         clock_signals: analysis.clockSignals
       },
+      timing_analysis: {
+        logic_relations: timingAnalysis.logic_relations,
+        setup_constraints: timingAnalysis.setup_time_constraints,
+        hold_constraints: timingAnalysis.hold_time_constraints,
+        sequences: timingAnalysis.signal_sequences,
+        implications: timingAnalysis.implications,
+        clock_to_q: timingAnalysis.clock_to_q_delays
+      },
       statistics: stats,
-      message: 'SVA 框架已生成。Phase 2 將實現完整的時序分析和 assertion 生成。'
+      message: timingAnalysis.has_violations
+        ? '⚠️ 檢測到時序違規！請查看 setup_violations 和 hold_violations。'
+        : '✓ 時序分析完成，未檢測到違規。'
     };
 
     return new Response(JSON.stringify(response), {
@@ -156,24 +183,26 @@ export async function handleValidateWavedrom(request, env, ctx) {
 }
 
 /**
- * Phase 1: 生成基本的 SVA 模組框架
- * 包含信號聲明、時鐘定義和註釋
+ * Phase 2: 生成包含時序約束的 SVA 模組
+ * 根據檢測到的時序關係生成具體的 SVA assertions
  */
-function generateBasicSVAModule(analysis, config) {
+function generateSVAWithConstraints(analysis, timingAnalysis, config) {
   const moduleName = config.module_name || 'assertions';
   const timeUnit = config.time_unit || analysis.timeUnit;
   const assertionMode = config.assertion_mode || 'strict';
+  const clockName = analysis.clockSignals[0] || 'clk';
 
   let code = `// SystemVerilog Assertions Module\n`;
   code += `// 自動生成自 Wavedrom 時序圖\n`;
-  code += `// 生成時間: ${new Date().toISOString()}\n\n`;
+  code += `// 生成時間: ${new Date().toISOString()}\n`;
+  code += `// 分析版本: Phase 2 - Timing Analysis\n\n`;
 
   code += `module ${moduleName}(\n`;
   code += `  input logic clk,\n`;
   code += `  input logic reset_n\n`;
   code += `);\n\n`;
 
-  // 信號聲明註釋
+  // 信號聲明
   code += `// === 信號聲明 ===\n`;
   code += `// 以下信號應從驗證環境中導入或聲明\n`;
   analysis.signals.forEach(signal => {
@@ -187,7 +216,9 @@ function generateBasicSVAModule(analysis, config) {
   code += `// === 配置參數 ===\n`;
   code += `parameter TIME_UNIT = "${timeUnit}";\n`;
   code += `parameter ASSERTION_MODE = "${assertionMode}";\n`;
-  code += `parameter DISABLE_ON_RESET = 1'b1;\n\n`;
+  code += `parameter DISABLE_ON_RESET = 1'b1;\n`;
+  code += `parameter SETUP_TIME = ${config.setup_margin || 2}; // ${timeUnit}\n`;
+  code += `parameter HOLD_TIME = ${config.hold_margin || 2}; // ${timeUnit}\n\n`;
 
   // 時鐘信息
   if (analysis.clockSignals.length > 0) {
@@ -201,17 +232,96 @@ function generateBasicSVAModule(analysis, config) {
     code += `\n`;
   }
 
-  // 基本 assertion 框架
-  code += `// === Assertions ===\n`;
-  code += `// Phase 1: 框架已生成\n`;
-  code += `// Phase 2 將添加具體的時序檢查\n\n`;
+  // Setup Time Constraints
+  if (timingAnalysis.setup_time_constraints && timingAnalysis.setup_time_constraints.length > 0) {
+    code += `// === Setup Time Constraints ===\n`;
+    timingAnalysis.setup_time_constraints.forEach((constraint, idx) => {
+      const safetyMargin = constraint.setupTime >= (config.setup_margin || 2) ? '✓' : '✗';
+      code += `// [${safetyMargin}] ${constraint.description}\n`;
+      code += `// property setup_${constraint.dataSignal}_${idx};\n`;
+      code += `//   @(${constraint.clockEdge === 'rising_edge' ? 'posedge' : 'negedge'} ${constraint.clockSignal})\n`;
+      code += `//   disable iff(!DISABLE_ON_RESET)\n`;
+      code += `//   $stable(${constraint.dataSignal});\n`;
+      code += `// endproperty\n`;
+      code += `// assert_setup_${constraint.dataSignal}_${idx}: assert property(setup_${constraint.dataSignal}_${idx});\n\n`;
+    });
+  }
 
-  // 示例 property（註釋）
-  code += `// property reset_timing;\n`;
-  code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
-  code += `//   reset_n |-> ##1 ready;\n`;
-  code += `// endproperty\n`;
-  code += `// assert_reset: assert property(reset_timing);\n\n`;
+  // Hold Time Constraints
+  if (timingAnalysis.hold_constraints && timingAnalysis.hold_constraints.length > 0) {
+    code += `// === Hold Time Constraints ===\n`;
+    timingAnalysis.hold_constraints.forEach((constraint, idx) => {
+      const safetyMargin = constraint.holdTime >= (config.hold_margin || 2) ? '✓' : '✗';
+      code += `// [${safetyMargin}] ${constraint.description}\n`;
+      code += `// property hold_${constraint.dataSignal}_${idx};\n`;
+      code += `//   @(${constraint.clockEdge === 'rising_edge' ? 'posedge' : 'negedge'} ${constraint.clockSignal})\n`;
+      code += `//   disable iff(!DISABLE_ON_RESET)\n`;
+      code += `//   ##1 $stable(${constraint.dataSignal});\n`;
+      code += `// endproperty\n`;
+      code += `// assert_hold_${constraint.dataSignal}_${idx}: assert property(hold_${constraint.dataSignal}_${idx});\n\n`;
+    });
+  }
+
+  // Logic Relations (Simultaneous Edges)
+  if (timingAnalysis.logic_relations && timingAnalysis.logic_relations.length > 0) {
+    code += `// === Logic Relations (Simultaneous Edges) ===\n`;
+    timingAnalysis.logic_relations.forEach((relation, idx) => {
+      code += `// ${relation.description}\n`;
+      if (relation.type === 'simultaneous_rising_edges') {
+        const signals = relation.signals.join(' && ');
+        code += `// property simultaneous_rising_${idx};\n`;
+        code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+        code += `//   (${signals});\n`;
+        code += `// endproperty\n`;
+      } else if (relation.type === 'mixed_edges') {
+        code += `// property mixed_edges_${idx};\n`;
+        code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+        code += `//   (${relation.rising.join(' || ')}) && (${relation.falling.join(' || ')});\n`;
+        code += `// endproperty\n`;
+      }
+      code += `// assert_logic_${idx}: assert property(simultaneous_rising_${idx});\n\n`;
+    });
+  }
+
+  // Signal Sequences
+  if (timingAnalysis.sequences && timingAnalysis.sequences.length > 0) {
+    code += `// === Signal Sequences ===\n`;
+    timingAnalysis.sequences.forEach((seq, idx) => {
+      code += `// ${seq.description}\n`;
+      code += `// property sequence_${idx};\n`;
+      code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+      // Simple sequence representation
+      const seqStr = seq.signals.map(s => `${s}`).join(' ##[*] ');
+      code += `//   ${seqStr};\n`;
+      code += `// endproperty\n`;
+      code += `// assert_sequence_${idx}: assert property(sequence_${idx});\n\n`;
+    });
+  }
+
+  // Implications
+  if (timingAnalysis.implications && timingAnalysis.implications.length > 0) {
+    code += `// === Implications (Causal Relationships) ===\n`;
+    timingAnalysis.implications.forEach((impl, idx) => {
+      code += `// ${impl.description}\n`;
+      code += `// property implication_${idx};\n`;
+      code += `//   @(posedge clk) disable iff(!DISABLE_ON_RESET)\n`;
+      code += `//   ${impl.antecedent} |-> ##[1:${impl.delay}] ${impl.consequent};\n`;
+      code += `// endproperty\n`;
+      code += `// assert_implication_${idx}: assert property(implication_${idx});\n\n`;
+    });
+  }
+
+  // Statistics and Summary
+  code += `// === Analysis Summary ===\n`;
+  code += `// Total Logic Relations: ${timingAnalysis.statistics.total_logic_relations}\n`;
+  code += `// Total Setup Constraints: ${timingAnalysis.statistics.total_setup_constraints}\n`;
+  code += `// Total Hold Constraints: ${timingAnalysis.statistics.total_hold_constraints}\n`;
+  code += `// Total Signal Sequences: ${timingAnalysis.statistics.total_sequences}\n`;
+  code += `// Total Implications: ${timingAnalysis.statistics.total_implications}\n`;
+  code += `// Clock-to-Q Measurements: ${timingAnalysis.statistics.total_ctq_measurements}\n`;
+  code += `// Setup Violations: ${timingAnalysis.statistics.setup_violations}\n`;
+  code += `// Hold Violations: ${timingAnalysis.statistics.hold_violations}\n`;
+  code += `// Timing Issues: ${timingAnalysis.has_violations ? '⚠️ YES' : '✓ NO'}\n\n`;
 
   code += `endmodule : ${moduleName}\n`;
 
