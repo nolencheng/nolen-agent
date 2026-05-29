@@ -1,6 +1,7 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import { handleSummarize } from '../workers-site/api/summarize.js';
 import { handleGenerateSVA, handleValidateWavedrom } from '../workers-site/api/sva-generator.js';
+import { handlePresetsAPI } from '../workers-site/api/presets.js';
 import { withReliability, StructuredLogger, addSecurityHeaders } from '../workers-site/middleware.js';
 
 // 導入靜態資源清單
@@ -56,6 +57,21 @@ async function handleApiRoute(pathname, request, env, ctx) {
         'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
+  }
+
+  // Presets API（預設管理）
+  if (pathname.startsWith('/api/presets')) {
+    return withReliability(
+      async (req, e, c) => handlePresetsAPI(req, e, c, pathname),
+      request,
+      env,
+      ctx,
+      {
+        timeout: 5000,
+        enableRateLimit: true,
+        logger
+      }
+    ).then(addSecurityHeaders);
   }
 
   // SVA 生成 API - 帶超時和速率限制保護

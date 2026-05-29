@@ -19,3 +19,10 @@ vars = {
 binding = "RATE_LIMIT_KV"
 id = "sva-rate-limit"
 preview_id = "sva-rate-limit-preview"
+
+# D1 Database binding for presets and user data
+[[d1_databases]]
+binding = "DB"
+database_name = "sva-generator"
+database_id = "sva-generator-db"
+preview_database_id = "sva-generator-preview"
